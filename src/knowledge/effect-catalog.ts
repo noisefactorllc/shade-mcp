@@ -12,10 +12,10 @@ solid, spectrum, subdivide, testPattern
 noise3d, fractal3d, cell3d, flythrough3d, shape3d, rd3d, ca3d
 
 ### FILTER (Processors) - Chain after generators
-adjust, bc, bloom, blur, bulge, celShading, cf, channel, chroma, chromaticAberration,
-clouds, colorspace, corrupt, crt, degauss, deriv, dither, edge, emboss, feedback,
+adjust, bloom, blur, bulge, celShading, cf, channel, chroma, chromaticAberration,
+clouds, corrupt, crt, degauss, deriv, dither, edge, emboss, feedback,
 fibers, flipMirror, fxaa, glowingEdge, glyphMap, grade, grain, grime, historicPalette,
-hs, inv, lens, lensWarp, lightLeak, lighting, lowPoly, motionBlur, normalMap,
+inv, lens, lensWarp, lightLeak, lighting, lowPoly, motionBlur, normalMap,
 normalize, octaveWarp, osd, outline, palette, pinch, pixelSort, pixels, polar,
 posterize, prismaticAberration, reindex, repeat, reverb, ridge, rot, scale,
 scanlineError, scratches, scroll, seamless, sharpen, simpleAberration, sine, skew,
@@ -74,8 +74,8 @@ colorLab(colorMode: 2, dither: 0, hueRange: 100, hueRotation: 0, levels: 2, pale
 effects(effect: 4, effectAmt: 2, flip: 0, offsetX: 0, offsetY: 0, rotation: 0, scaleAmt: 100)
 posterize(levels: 6)
 outline()
-colorspace()
-hs(rotation: 120, hueRange: 40)
-bc()
+adjust(mode: hsv)
+adjust(rotation: 120, hueRange: 40)
+adjust()
 \`\`\`
 `

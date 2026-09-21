@@ -605,7 +605,7 @@ export const DSL_EXEMPLAR_PROGRAMS: ExemplarProgram[] = [
   },
   {
     name: 'oklab color',
-    dsl: 'search synth, filter\n\nnoise(ridges: true)\n  .colorspace(mode: oklab)\n  .write(o0)\nrender(o0)',
+    dsl: 'search synth, filter\n\nnoise(ridges: true)\n  .adjust(mode: oklab)\n  .write(o0)\nrender(o0)',
     tags: ['filter', 'colorspace', 'oklab', 'color'],
     description: 'Noise processed in perceptual oklab color space',
   },
