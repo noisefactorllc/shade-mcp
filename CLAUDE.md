@@ -88,11 +88,25 @@ Supply the environment variables for that project.
 ## Consumer Projects
 
 ### noisemaker (`../noisemaker`)
-- Vendors `dist/harness/` and `dist/analysis/` into `vendor/shade-mcp/`
+- The shared compatibility checkpoint is `../noisemaker/LEDGER.md`, section
+  "AI development contract (llms-full.txt)". Follow its paired audit and
+  validation recipe for changes to either project; the pass owns integration
+  work in both checkouts even when only one supplied the trigger.
+- Vendors `dist/harness/`, `dist/ai/`, `dist/formats/`, and `dist/analysis/`
+  into `vendor/shade-mcp/` through `pull-shade-mcp`
 - Imports `checkEffectStructure` directly from vendored harness (library mode, no MCP)
 - Test harness: `shaders/tests/test-harness.js --structure` runs structure checks including name collision detection
 - Structure-only mode: `--structure-only --effects "*/*"` runs all on-disk checks without a browser
-- Update the vendor copy manually when shade-mcp changes
+- The release workflow dispatches Noisemaker's `pull-shade-mcp.yml` to
+  refresh the vendor copy. Noisemaker's immutable `.mcp.json` pin is a
+  separate delivery path. Reconcile both with the tested Shade source;
+  never infer delivery from a local build, hand-edit generated vendor files,
+  or replace the pin with a floating branch.
+- Record both source SHAs, the MCP pin, vendor release/source, paired tests,
+  and required exact-commit CI before advancing the shared checkpoint and
+  `llms-full.txt` snapshot together. Pending release, pin, vendor, or browser
+  validation work leaves the pass incomplete. Existing publication approval
+  rules still apply.
 
 ### portable (`../portable`)
 - Vendors full `dist/` via `pull-shade-mcp` script (clones from GitHub, builds, copies)
