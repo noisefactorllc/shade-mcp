@@ -86,18 +86,32 @@ export async function runDslProgram(
       }, { unis: options.uniforms, globals: session.globals })
     }
 
-    // Wait for warmup
+    // Wait for warmup. Bounded like the render tool's wait: if the viewer's
+    // frame counter never advances, this rAF poll would hang the tool call
+    // forever, because page.setDefaultTimeout does not apply to evaluate.
     const warmup = options.warmupFrames ?? 10
-    await page.evaluate(({ frames, globals }) => {
-      return new Promise<void>((resolve) => {
+    await page.evaluate(({ frames, globals, timeout }) => {
+      return new Promise<void>((resolve, reject) => {
         const start = (window as any)[globals.frameCount] || 0
+        let settled = false
+        const timer = setTimeout(() => {
+          if (settled) return
+          settled = true
+          reject(new Error(`Warmup timed out after ${timeout} ms waiting for ${frames} frames (frame counter stuck at ${(window as any)[globals.frameCount] || 0})`))
+        }, timeout)
         const poll = () => {
-          if (((window as any)[globals.frameCount] || 0) - start >= frames) resolve()
-          else requestAnimationFrame(poll)
+          if (settled) return
+          if (((window as any)[globals.frameCount] || 0) - start >= frames) {
+            settled = true
+            clearTimeout(timer)
+            resolve()
+          } else {
+            requestAnimationFrame(poll)
+          }
         }
         poll()
       })
-    }, { frames: warmup, globals: session.globals })
+    }, { frames: warmup, globals: session.globals, timeout: session.timeoutMs })
 
     // Read pixels and compute metrics
     const result = await page.evaluate(({ captureImage, globals }) => {

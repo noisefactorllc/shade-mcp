@@ -57,28 +57,50 @@ export async function renderEffectFrame(
       }, { unis: options.uniforms, globals: session.globals })
     }
 
-    // If time is specified, pause and set time
+    // If time is specified, pause and set time. Unpausing happens in a finally:
+    // a throwing capture must not leak a paused session into the next effect
+    // of the batch, where a paused viewer freezes the frame counter and every
+    // subsequent warmup wait would stall.
+    let paused = false
     if (options.time !== undefined) {
       await page.evaluate(({ time, globals }) => {
         const w = window as any
         if (w[globals.setPaused]) w[globals.setPaused](true)
         if (w[globals.setPausedTime]) w[globals.setPausedTime](time)
       }, { time: options.time, globals: session.globals })
+      paused = true
     }
 
-    // Wait for warmup frames
-    const warmup = options.warmupFrames ?? 10
-    await page.evaluate(({ frames, globals }) => {
-      return new Promise<void>((resolve) => {
-        const start = (window as any)[globals.frameCount] || 0
-        const poll = () => {
-          const current = (window as any)[globals.frameCount] || 0
-          if (current - start >= frames) resolve()
-          else requestAnimationFrame(poll)
-        }
-        poll()
-      })
-    }, { frames: warmup, globals: session.globals })
+    try {
+      // Wait for warmup frames. The wait is bounded: the frame counter lives in
+      // the viewer, and when it never advances (a session left paused, a viewer
+      // that does not publish the global, a backgrounded tab) this rAF poll
+      // would otherwise hang the whole tool call — page.setDefaultTimeout does
+      // not apply to evaluate, so SHADE_TIMEOUT_MS would never fire.
+      const warmup = options.warmupFrames ?? 10
+      await page.evaluate(({ frames, globals, timeout }) => {
+        return new Promise<void>((resolve, reject) => {
+          const start = (window as any)[globals.frameCount] || 0
+          let settled = false
+          const timer = setTimeout(() => {
+            if (settled) return
+            settled = true
+            reject(new Error(`Warmup timed out after ${timeout} ms waiting for ${frames} frames (frame counter stuck at ${(window as any)[globals.frameCount] || 0})`))
+          }, timeout)
+          const poll = () => {
+            if (settled) return
+            const current = (window as any)[globals.frameCount] || 0
+            if (current - start >= frames) {
+              settled = true
+              clearTimeout(timer)
+              resolve()
+            } else {
+              requestAnimationFrame(poll)
+            }
+          }
+          poll()
+        })
+      }, { frames: warmup, globals: session.globals, timeout: session.timeoutMs })
 
     // Read pixels and compute metrics
     const result = await page.evaluate(({ captureImage, globals }) => {
@@ -173,15 +195,17 @@ export async function renderEffectFrame(
       }
     }, { captureImage: options.captureImage ?? false, globals: session.globals })
 
-    // Unpause if we paused for a specific time
-    if (options.time !== undefined) {
-      await page.evaluate((globals) => {
-        const w = window as any
-        if (w[globals.setPaused]) w[globals.setPaused](false)
-      }, session.globals)
+      return result as RenderResult
+    } finally {
+      // Unpause even when the warmup wait or the capture threw, so a failure
+      // cannot leak a paused session into the next effect of the batch.
+      if (paused) {
+        await page.evaluate((globals) => {
+          const w = window as any
+          if (w[globals.setPaused]) w[globals.setPaused](false)
+        }, session.globals).catch(() => {})
+      }
     }
-
-    return result as RenderResult
   })
 }
 
