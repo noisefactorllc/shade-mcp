@@ -27,12 +27,15 @@ function installFakeViewer(globals: ReturnType<typeof globalsFromPrefix>): void 
   }
   w[globals.canvasRenderer] = {
     canvas: { width: 2, height: 2 },
-    // Records the pause state and paused time in effect for the last explicit
-    // redraw, so the test can assert the capture draws at the requested time.
-    render: () => {
+    // Records the pause state, paused time and the time argument of the last
+    // explicit redraw, so the tests can assert the capture draws at the
+    // requested time (and not at all for an untimed capture).
+    render: (t: number) => {
       frames++
+      w.__redrawCalls = (w.__redrawCalls || 0) + 1
       w.__lastRedrawPaused = w.__paused === true
       w.__lastRedrawTime = w.__pausedTime
+      w.__lastRedrawArg = t
     },
   }
   Object.defineProperty(w, globals.frameCount, {
@@ -103,9 +106,22 @@ describe('renderEffectFrame timed capture', () => {
     expect(events[events.length - 1]).toBe('unpause')
     expect(window.__paused).toBe(false)
     // The readback was preceded by an explicit redraw made while paused, with
-    // the requested time in effect — not the last warmup frame.
+    // the requested time in effect — not the last warmup frame, and not a
+    // hardcoded time 0 (the real viewer draws at the render() argument, so a
+    // 0 there would silently pin every timed capture to time 0).
     expect(window.__lastRedrawPaused).toBe(true)
     expect(window.__lastRedrawTime).toBe(1.5)
+    expect(window.__lastRedrawArg).toBe(1.5)
+  })
+
+  it('does not redraw an untimed capture (live-frame readback)', async () => {
+    const session = makeSession()
+    const result = await renderEffectFrame(session, 'synth/noise', { warmupFrames: 2 })
+
+    expect(result.status).toBe('ok')
+    const window: any = (globalThis as any).window
+    expect(window.__redrawCalls ?? 0).toBe(0)
+    expect(window.__paused ?? false).toBe(false)
   })
 
   it('still unpauses when the capture throws', async () => {

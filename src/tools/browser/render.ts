@@ -106,7 +106,7 @@ export async function renderEffectFrame(
 
     try {
       // Read pixels and compute metrics
-      const result = await page.evaluate(({ captureImage, globals }) => {
+      const result = await page.evaluate(({ captureImage, globals, time }) => {
         const renderer = (window as any)[globals.canvasRenderer]
         const pipeline = (window as any)[globals.renderingPipeline]
         if (!renderer || !pipeline) return { status: 'error', backend: 'unknown', error: 'No renderer' }
@@ -114,11 +114,17 @@ export async function renderEffectFrame(
         const canvas = renderer.canvas
         const gl = pipeline.backend?.gl
 
-        // Draw fresh before reading back: without an explicit redraw the
-        // framebuffer can still hold the last warmup frame instead of the
-        // requested paused time (the parity capture does the same before its
-        // readback). renderer.render honors the paused time set above.
-        if (typeof renderer.render === 'function') renderer.render(0)
+        // Timed capture only: after the pause the frame loop is stopped, so the
+        // framebuffer still holds the last warmup frame rather than the
+        // requested paused time. Redraw explicitly at that time — the same
+        // value handed to setPausedTime, which is what a paused single-frame
+        // render draws (the parity capture redraws the same way before its
+        // readback). renderer.render takes the time to draw as its argument in
+        // this viewer family, so a hardcoded 0 would silently pin every timed
+        // capture to time 0. Untimed captures keep the historical live-frame
+        // readback: the loop is still running and the framebuffer already
+        // holds the current frame.
+        if (time !== null && typeof renderer.render === 'function') renderer.render(time)
 
         let pixels: Uint8Array | null = null
         let width = canvas.width, height = canvas.height
@@ -202,7 +208,7 @@ export async function renderEffectFrame(
             is_monochrome: isMono
           }
         }
-      }, { captureImage: options.captureImage ?? false, globals: session.globals })
+      }, { captureImage: options.captureImage ?? false, globals: session.globals, time: options.time ?? null })
 
       return result as RenderResult
     } finally {
