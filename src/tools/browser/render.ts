@@ -114,6 +114,12 @@ export async function renderEffectFrame(
         const canvas = renderer.canvas
         const gl = pipeline.backend?.gl
 
+        // Draw fresh before reading back: without an explicit redraw the
+        // framebuffer can still hold the last warmup frame instead of the
+        // requested paused time (the parity capture does the same before its
+        // readback). renderer.render honors the paused time set above.
+        if (typeof renderer.render === 'function') renderer.render(0)
+
         let pixels: Uint8Array | null = null
         let width = canvas.width, height = canvas.height
 

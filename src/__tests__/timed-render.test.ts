@@ -27,14 +27,20 @@ function installFakeViewer(globals: ReturnType<typeof globalsFromPrefix>): void 
   }
   w[globals.canvasRenderer] = {
     canvas: { width: 2, height: 2 },
-    render: () => { frames++ },
+    // Records the pause state and paused time in effect for the last explicit
+    // redraw, so the test can assert the capture draws at the requested time.
+    render: () => {
+      frames++
+      w.__lastRedrawPaused = w.__paused === true
+      w.__lastRedrawTime = w.__pausedTime
+    },
   }
   Object.defineProperty(w, globals.frameCount, {
     configurable: true,
     get: () => frames,
   })
   w[globals.setPaused] = (v: boolean) => { w.__paused = v }
-  w[globals.setPausedTime] = () => {}
+  w[globals.setPausedTime] = (t: number) => { w.__pausedTime = t }
 
   ;(globalThis as any).window = w
   ;(globalThis as any).requestAnimationFrame = (cb: () => void) => setTimeout(() => { frames++; cb() }, 0)
@@ -96,6 +102,10 @@ describe('renderEffectFrame timed capture', () => {
     expect(events[1]).toMatch(/^pause@\d+$/)
     expect(events[events.length - 1]).toBe('unpause')
     expect(window.__paused).toBe(false)
+    // The readback was preceded by an explicit redraw made while paused, with
+    // the requested time in effect — not the last warmup frame.
+    expect(window.__lastRedrawPaused).toBe(true)
+    expect(window.__lastRedrawTime).toBe(1.5)
   })
 
   it('still unpauses when the capture throws', async () => {
