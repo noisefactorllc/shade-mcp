@@ -78,6 +78,9 @@ Supply the environment variables for that project.
 | `SHADE_VIEWER_PATH` | No | `/` | Path to viewer index.html within viewer root |
 | `SHADE_VIEWER_PORT` | No | `0` (auto) | HTTP server port (0 = OS-assigned to avoid conflicts) |
 | `SHADE_GLOBALS_PREFIX` | No | `__shade` | Window globals prefix (e.g., `__portable` → `__portableCanvasRenderer`) |
+| `SHADE_DSL_RENDERER_MODULE` | No | `/shaders/src/index.js` | Root-relative or HTTPS module exporting `CanvasRenderer` and `compile` for the fresh DSL renderer |
+| `SHADE_DSL_ASSETS_BASE` | No | `/shaders` | Root-relative or HTTPS asset base for the fresh DSL renderer |
+| `SHADE_DSL_USE_BUNDLES` | No | `false` | Use bundled effect assets for DSL batch rendering; Portable's CDN requires `true` |
 | `SHADE_BACKEND` | No | `webgl2` | Default rendering backend |
 | `SHADE_MAX_BROWSERS` | No | `1` | Max concurrent browser sessions (pipelining) |
 | `SHADE_HEADLESS` | No | `1` (headless) | Set `0` to show the browser window. Headless mode is required when no display is available. |
@@ -131,6 +134,11 @@ shade-mcp does not include a viewer.
 Consumers must provide one through `SHADE_VIEWER_ROOT`, or through the `viewerRoot` option in library mode.
 The seven viewer-driven browser tools require window globals that match the configured prefix.
 The default is `__shade*`. Set `SHADE_GLOBALS_PREFIX` to change the prefix.
-`runDslProgram` instead imports the Noisemaker renderer from `SHADE_VIEWER_ROOT`
-(the Noisemaker repository root) and uses a fresh blank page; it does not use
-viewer globals or `SHADE_VIEWER_PATH`.
+`runDslProgram` uses a fresh blank page and imports the configured Noisemaker
+module and assets. Its defaults resolve under `SHADE_VIEWER_ROOT` when that is
+the Noisemaker repository root. For Portable's built-in Noisemaker DSL, set
+`SHADE_DSL_RENDERER_MODULE=https://shaders.noisedeck.app/1/noisemaker-shaders-core.esm.js`,
+`SHADE_DSL_ASSETS_BASE=https://shaders.noisedeck.app/1`, and
+`SHADE_DSL_USE_BUNDLES=true`. Keep Portable's viewer root/path/globals for the
+seven viewer-driven tools. The fresh batch does not register Portable's authored
+`user.*` effects; support for those requires shared browser-safe registration.

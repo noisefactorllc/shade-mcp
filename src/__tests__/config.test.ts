@@ -78,4 +78,38 @@ describe('config', () => {
     const { getConfig: reload } = await import('../config.js')
     expect(reload().aiModel).toBe('some-model')
   })
+
+  it('keeps DSL renderer defaults on the served Noisemaker source tree', async () => {
+    const { getConfig } = await import('../config.js')
+    expect(getConfig().dslRendererModule).toBe('/shaders/src/index.js')
+    expect(getConfig().dslAssetsBase).toBe('/shaders')
+    expect(getConfig().dslUseBundles).toBe(false)
+  })
+
+  it('accepts a separate HTTPS bundled renderer for Portable without changing viewer settings', async () => {
+    vi.stubEnv('SHADE_DSL_RENDERER_MODULE', 'https://shaders.noisedeck.app/1/noisemaker-shaders-core.esm.js')
+    vi.stubEnv('SHADE_DSL_ASSETS_BASE', 'https://shaders.noisedeck.app/1')
+    vi.stubEnv('SHADE_DSL_USE_BUNDLES', 'true')
+    vi.stubEnv('SHADE_VIEWER_PATH', '/viewer/index.html')
+    const { getConfig } = await import('../config.js')
+    const config = getConfig()
+    expect(config.dslRendererModule).toBe('https://shaders.noisedeck.app/1/noisemaker-shaders-core.esm.js')
+    expect(config.dslAssetsBase).toBe('https://shaders.noisedeck.app/1')
+    expect(config.dslUseBundles).toBe(true)
+    expect(config.viewerPath).toBe('/viewer/index.html')
+  })
+
+  it.each([
+    ['SHADE_DSL_RENDERER_MODULE', 'javascript:alert(1)'],
+    ['SHADE_DSL_RENDERER_MODULE', 'http://example.org/core.js'],
+    ['SHADE_DSL_RENDERER_MODULE', '/shaders/../secret.js'],
+    ['SHADE_DSL_RENDERER_MODULE', 'https://user:pass@example.org/core.js'],
+    ['SHADE_DSL_ASSETS_BASE', '//example.org/assets'],
+    ['SHADE_DSL_ASSETS_BASE', 'https://example.org/1?token=secret'],
+    ['SHADE_DSL_USE_BUNDLES', 'sometimes'],
+  ])('rejects invalid DSL renderer configuration %s=%s', async (key, value) => {
+    vi.stubEnv(key, value)
+    const { getConfig } = await import('../config.js')
+    expect(() => getConfig()).toThrow(/SHADE_DSL_/)
+  })
 })

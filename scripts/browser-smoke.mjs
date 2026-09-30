@@ -245,9 +245,80 @@ try {
 if (!backendMismatchOk) failed++
 console.log(`browser-smoke: ${backendMismatchOk ? 'PASS' : 'FAIL'} backend fallback fails DSL batch`)
 
+// The DSL page must have a trustworthy loopback origin for WebGPU without
+// loading the consumer's viewer. Exercise the real renderer when Chromium can
+// provide a device; otherwise, a WebGL fallback must still fail the request.
+const webgpuSession = new BrowserSession({
+  backend: 'webgpu', blankPage: true, viewerRoot: NM, effectsDir: `${NM}/shaders/effects`,
+})
+let isolatedPageOk = false
+let webgpuRenderOk = false
+let webgpuUnavailable = false
+let webgpuCapability = ''
+let virtualRouteRemoved = false
+try {
+  await webgpuSession.setup()
+  const page = webgpuSession.page
+  const state = await page.evaluate(async () => {
+    let capability = 'no-gpu'
+    try {
+      if (navigator.gpu) {
+        capability = 'no-adapter'
+        const adapter = await navigator.gpu.requestAdapter()
+        if (adapter) {
+          capability = 'no-device'
+          const device = await adapter.requestDevice()
+          device.destroy()
+          capability = 'device'
+        }
+      }
+    } catch (error) {
+      capability = `device-error: ${String(error)}`
+    }
+    return {
+      url: location.href,
+      secure: isSecureContext,
+      viewerLoaded: typeof window.__noisemakerCanvasRenderer !== 'undefined',
+      canvasCount: document.querySelectorAll('canvas').length,
+      capability,
+    }
+  })
+  isolatedPageOk = /^http:\/\/127\.0\.0\.1:\d+$/.test(new URL(state.url).origin)
+    && new URL(state.url).pathname === '/.shade-mcp-blank.html'
+    && state.secure && !state.viewerLoaded && state.canvasCount === 0
+  webgpuCapability = state.capability
+
+  const result = await runDslProgram(webgpuSession, 'search synth\nnoise().write(o0)\nrender(o0)', {
+    frames: [1], warmupFrames: 0, resolution: [64, 64], cellResolution: [64, 64],
+  })
+  if (state.capability === 'device') {
+    webgpuRenderOk = result.status === 'ok' && result.backend?.toLowerCase() === 'webgpu'
+      && result.captures?.length === 1
+      && result.captures[0].metrics.unique_sampled_colors > 1
+      && !result.captures[0].metrics.is_all_zero
+      && result.image_data && Buffer.from(result.image_data, 'base64').subarray(0, 8)
+        .equals(Buffer.from('89504e470d0a1a0a', 'hex'))
+  } else {
+    webgpuUnavailable = true
+    webgpuRenderOk = result.status === 'error' && !result.image_data
+  }
+
+  // The virtual document route is only active for setup navigation. The
+  // server refuses the dotfile path after the route is removed.
+  virtualRouteRemoved = (await page.goto(state.url))?.status() === 403
+} finally {
+  await webgpuSession.teardown()
+}
+if (!isolatedPageOk) failed++
+if (!webgpuRenderOk) failed++
+if (!virtualRouteRemoved) failed++
+console.log(`browser-smoke: ${isolatedPageOk ? 'PASS' : 'FAIL'} isolated secure loopback DSL page`)
+console.log(`browser-smoke: ${webgpuRenderOk ? webgpuUnavailable ? 'SKIP' : 'PASS' : 'FAIL'} genuine WebGPU DSL render${webgpuUnavailable ? ` (${webgpuCapability}; fallback rejected)` : ''}`)
+console.log(`browser-smoke: ${virtualRouteRemoved ? 'PASS' : 'FAIL'} virtual blank-page route removed`)
+
 if (failed) {
   console.error(`browser-smoke: ${failed} check(s) failed`)
   process.exit(1)
 }
-console.log(`browser-smoke: all ${checks.length + 8} checks OK`)
+console.log('browser-smoke: all available checks OK')
 process.exit(0)

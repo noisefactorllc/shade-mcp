@@ -33,14 +33,20 @@ The browser tools use Chromium. Seven control a viewer page that hosts the rende
 shade-mcp does not include a viewer.
 Set `SHADE_VIEWER_ROOT` to the smallest directory containing the viewer and its imported modules.
 For the seven viewer tools, the page must expose the renderer through window globals.
-Set `SHADE_GLOBALS_PREFIX` to match those globals. `runDslProgram` requires the
-Noisemaker repository root as `SHADE_VIEWER_ROOT` so it can import the renderer
-and effects directly; it does not use viewer globals or `SHADE_VIEWER_PATH`.
+Set `SHADE_GLOBALS_PREFIX` to match those globals. `runDslProgram` uses a fresh
+renderer independently of the viewer globals and `SHADE_VIEWER_PATH`. By default
+it imports Noisemaker source modules from `/shaders/src/index.js` and assets from
+`/shaders` under `SHADE_VIEWER_ROOT`. For Portable's built-in Noisemaker DSL,
+set `SHADE_DSL_RENDERER_MODULE=https://shaders.noisedeck.app/1/noisemaker-shaders-core.esm.js`,
+`SHADE_DSL_ASSETS_BASE=https://shaders.noisedeck.app/1`, and
+`SHADE_DSL_USE_BUNDLES=true`; keep its viewer settings for the other browser tools.
+Portable `user.*` effects registered by its viewer are not loaded into the fresh
+DSL renderer.
 
 | Project | `SHADE_VIEWER_ROOT` | `SHADE_VIEWER_PATH` | `SHADE_GLOBALS_PREFIX` |
 |---------|---------------------|---------------------|------------------------|
 | noisemaker | `<noisemaker>` | `/demo/shaders/` | `__noisemaker` |
-| portable | `<portable>/viewer` | *(default `/`)* | `__portable` |
+| portable | `<portable>` | `/viewer/index.html` | `__portable` |
 
 noisemaker's viewer page is in `demo/shaders/` and imports the engine from `shaders/src/` at the repository root.
 For noisemaker, set `SHADE_VIEWER_ROOT` to the repository root.
@@ -61,6 +67,9 @@ Environment variables:
 | `SHADE_VIEWER_PATH` | `/` | Path within the viewer to open |
 | `SHADE_VIEWER_PORT` | `0` (OS-assigned) | Port for the local viewer server |
 | `SHADE_GLOBALS_PREFIX` | `__shade` | Prefix of the viewer's window globals |
+| `SHADE_DSL_RENDERER_MODULE` | `/shaders/src/index.js` | Root-relative or HTTPS Noisemaker module exporting `CanvasRenderer` and `compile` for `runDslProgram` |
+| `SHADE_DSL_ASSETS_BASE` | `/shaders` | Root-relative or HTTPS Noisemaker asset base for `runDslProgram` |
+| `SHADE_DSL_USE_BUNDLES` | `false` | Set `true` when DSL effects load from bundled assets (Portable's CDN) |
 | `SHADE_BACKEND` | `webgl2` | Default rendering backend (`webgl2` or `webgpu`) |
 | `SHADE_MAX_BROWSERS` | `1` | Concurrent browser sessions |
 | `SHADE_HEADLESS` | `1` (headless) | Set to `0` to watch the browser window |

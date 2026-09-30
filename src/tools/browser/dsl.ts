@@ -4,6 +4,7 @@ import { BrowserSession } from '../../harness/browser-session.js'
 import { getServerUrl } from '../../harness/server-manager.js'
 import { computeImageMetrics } from '../../harness/pixel-reader.js'
 import { toolResult } from '../tool-result.js'
+import { getConfig } from '../../config.js'
 
 const resolution = z.tuple([z.number().int().min(1).max(1920), z.number().int().min(1).max(1080)])
 const frames = z.array(z.number().int().min(1).max(1200)).min(1).max(6)
@@ -57,6 +58,7 @@ export async function runDslProgram(
   const [width, height] = input.resolution
   const [cellWidth, cellHeight] = input.cell_resolution
   const warmupFrames = input.warmup_frames
+  const config = getConfig()
   if (width * height * captureFrames.length > 16_000_000) {
     throw new Error('Requested captures exceed the 16 million pixel batch limit')
   }
@@ -70,15 +72,17 @@ export async function runDslProgram(
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       const batch = await Promise.race<BatchResult>([
-        page.evaluate(async ({ baseUrl, dsl, backend, width, height, cellWidth, cellHeight, captureFrames, warmupFrames, uniforms }) => {
-          const { CanvasRenderer } = await import(`${baseUrl}/shaders/src/renderer/canvas.js`)
+        page.evaluate(async ({ rendererModule, assetsBase, useBundles, dsl, backend, width, height, cellWidth, cellHeight, captureFrames, warmupFrames, uniforms }) => {
+          const { CanvasRenderer, compile } = await import(rendererModule)
           const canvas = document.createElement('canvas')
           canvas.width = width
           canvas.height = height
           document.body.appendChild(canvas)
           let renderFailure: string | null = null
           const renderer = new CanvasRenderer({
-            canvas, width, height, basePath: `${baseUrl}/shaders`, preferWebGPU: backend === 'webgpu',
+            canvas, width, height, basePath: assetsBase,
+            bundlePath: `${assetsBase}/effects`, useBundles,
+            preferWebGPU: backend === 'webgpu',
             onError: (error: any) => { renderFailure = error?.message || String(error) },
           })
           try {
@@ -92,7 +96,6 @@ export async function runDslProgram(
             if (actualBackend.toLowerCase() !== backend) {
               throw new Error(`Requested backend ${backend}, renderer used ${actualBackend}`)
             }
-            const { compile } = await import(`${baseUrl}/shaders/src/lang/index.js`)
             const compiled = compile(dsl)
             const written = new Set<string>()
             const visit = (value: any): void => {
@@ -199,7 +202,10 @@ export async function runDslProgram(
             canvas.remove()
           }
         }, {
-          baseUrl: getServerUrl(), dsl, backend: session.backend, width, height,
+          rendererModule: config.dslRendererModule.startsWith('/') ? `${getServerUrl()}${config.dslRendererModule}` : config.dslRendererModule,
+          assetsBase: config.dslAssetsBase.startsWith('/') ? `${getServerUrl()}${config.dslAssetsBase}` : config.dslAssetsBase,
+          useBundles: config.dslUseBundles,
+          dsl, backend: session.backend, width, height,
           cellWidth, cellHeight, captureFrames, warmupFrames, uniforms: options.uniforms,
         }) as Promise<BatchResult>,
         new Promise<BatchResult>((_, reject) => {

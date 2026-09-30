@@ -1,4 +1,4 @@
-import { chromium, type Browser, type BrowserContext, type Page, type ConsoleMessage } from 'playwright'
+import { chromium, type Browser, type BrowserContext, type Page, type ConsoleMessage, type Route } from 'playwright'
 import { resolve } from 'node:path'
 import type { Backend } from '../config.js'
 import type { BrowserSessionOptions, CompileResult, RenderResult, BenchmarkResult, ImageMetrics, ViewerGlobals } from './types.js'
@@ -114,7 +114,23 @@ export class BrowserSession {
         this.consoleMessages.push({ type: 'pageerror', text: error.message })
       })
 
-      if (!this.options.blankPage) {
+      if (this.options.blankPage) {
+        // WebGPU requires a trustworthy origin. Keep the DSL page isolated from
+        // the consumer's viewer while giving it the same loopback origin as
+        // the renderer modules it imports from the local server.
+        const blankUrl = `${this.baseUrl}/.shade-mcp-blank.html`
+        const fulfillBlankPage = (route: Route) => route.fulfill({
+          status: 200,
+          contentType: 'text/html',
+          body: '<!doctype html><html><head><meta charset="utf-8"></head><body></body></html>',
+        })
+        await this.page.route(blankUrl, fulfillBlankPage)
+        try {
+          await this.page.goto(blankUrl, { waitUntil: 'domcontentloaded' })
+        } finally {
+          await this.page.unroute(blankUrl, fulfillBlankPage)
+        }
+      } else {
         await this.page.goto(`${this.baseUrl}${this.viewerPath}`, { waitUntil: 'networkidle' })
 
         // Existing effect tools run in the configured viewer. The DSL batch
