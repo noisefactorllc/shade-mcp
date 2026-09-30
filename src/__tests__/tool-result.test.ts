@@ -27,6 +27,19 @@ describe('toolResult', () => {
     const result = toolResult({ status: 'ok', value: 1 })
     expect(JSON.parse(result.content[0].text)).toEqual({ status: 'ok', value: 1 })
   })
+
+  it('returns PNG bytes as MCP image content beside metadata', () => {
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ'
+    const result = toolResult(
+      { status: 'ok', surfaces: ['o0', 'o1'], frames: [1, 120, 600] },
+      [{ data: png, mimeType: 'image/png' }],
+    )
+    expect(result.content).toEqual([
+      { type: 'text', text: JSON.stringify({ status: 'ok', surfaces: ['o0', 'o1'], frames: [1, 120, 600] }, null, 2) },
+      { type: 'image', data: png, mimeType: 'image/png' },
+    ])
+    expect(result.content[0].text).not.toContain(png)
+  })
 })
 
 describe('a failing tool call over MCP', () => {

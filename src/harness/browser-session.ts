@@ -62,6 +62,7 @@ export class BrowserSession {
     this.timeoutMs = opts.timeoutMs ?? config.timeoutMs
     this.options = {
       backend: opts.backend,
+      blankPage: opts.blankPage ?? false,
       // Headless by default: a visible window on every tool call is noise, and
       // launching headed fails outright wherever there is no display. Opt back
       // in with { headless: false } or SHADE_HEADLESS=0.
@@ -113,15 +114,18 @@ export class BrowserSession {
         this.consoleMessages.push({ type: 'pageerror', text: error.message })
       })
 
-      await this.page.goto(`${this.baseUrl}${this.viewerPath}`, { waitUntil: 'networkidle' })
+      if (!this.options.blankPage) {
+        await this.page.goto(`${this.baseUrl}${this.viewerPath}`, { waitUntil: 'networkidle' })
 
-      // Wait for renderer to be ready
-      const rendererGlobal = this.globals.canvasRenderer
-      await this.page.waitForFunction(
-        (name) => !!(window as any)[name],
-        rendererGlobal,
-        { timeout: this.timeoutMs }
-      )
+        // Existing effect tools run in the configured viewer. The DSL batch
+        // tool builds an isolated renderer on the blank page instead.
+        const rendererGlobal = this.globals.canvasRenderer
+        await this.page.waitForFunction(
+          (name) => !!(window as any)[name],
+          rendererGlobal,
+          { timeout: this.timeoutMs }
+        )
+      }
 
       this._isSetup = true
       trackSession(this)

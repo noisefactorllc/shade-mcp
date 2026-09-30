@@ -129,5 +129,8 @@ Supply the environment variables for that project.
 
 shade-mcp does not include a viewer.
 Consumers must provide one through `SHADE_VIEWER_ROOT`, or through the `viewerRoot` option in library mode.
-The viewer must expose window globals that match the configured prefix.
+The seven viewer-driven browser tools require window globals that match the configured prefix.
 The default is `__shade*`. Set `SHADE_GLOBALS_PREFIX` to change the prefix.
+`runDslProgram` instead imports the Noisemaker renderer from `SHADE_VIEWER_ROOT`
+(the Noisemaker repository root) and uses a fresh blank page; it does not use
+viewer globals or `SHADE_VIEWER_PATH`.

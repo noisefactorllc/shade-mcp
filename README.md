@@ -15,7 +15,7 @@ Distilled from three projects:
 ## Requirements
 
 - Node.js 22 or newer
-- A viewer page, for the browser tools only — shade-mcp does not bundle one. See [Viewer](#viewer).
+- A viewer page for the seven viewer-driven browser tools; `runDslProgram` needs a Noisemaker checkout. See [Viewer](#viewer).
 
 ## Quick Start
 
@@ -28,11 +28,14 @@ npm run setup          # install Playwright Chromium (browser tools only)
 
 ## Viewer
 
-The eight browser tools use Chromium to control a viewer page that hosts the renderer.
+The browser tools use Chromium. Seven control a viewer page that hosts the renderer;
+`runDslProgram` creates a fresh renderer on a blank page for each call.
 shade-mcp does not include a viewer.
 Set `SHADE_VIEWER_ROOT` to the smallest directory containing the viewer and its imported modules.
-The page must expose the renderer through window globals.
-Set `SHADE_GLOBALS_PREFIX` to match those globals.
+For the seven viewer tools, the page must expose the renderer through window globals.
+Set `SHADE_GLOBALS_PREFIX` to match those globals. `runDslProgram` requires the
+Noisemaker repository root as `SHADE_VIEWER_ROOT` so it can import the renderer
+and effects directly; it does not use viewer globals or `SHADE_VIEWER_PATH`.
 
 | Project | `SHADE_VIEWER_ROOT` | `SHADE_VIEWER_PATH` | `SHADE_GLOBALS_PREFIX` |
 |---------|---------------------|---------------------|------------------------|
@@ -143,7 +146,7 @@ In `~/.codeium/windsurf/mcp_config.json`:
 
 ### Browser Tools (8)
 
-These tools require Playwright Chromium and a viewer (see [Viewer](#viewer)).
+These tools require Playwright Chromium; all except `runDslProgram` require a viewer (see [Viewer](#viewer)).
 
 | Tool | Description |
 |------|-------------|
@@ -154,7 +157,7 @@ These tools require Playwright Chromium and a viewer (see [Viewer](#viewer)).
 | `testUniformResponsiveness` | Check whether each uniform changes the output. Return a pass/fail result for each uniform. |
 | `testNoPassthrough` | Check that filter effects change their input (>1% pixel difference). |
 | `testPixelParity` | Compare WebGL2 and WebGPU output pixel by pixel within the epsilon tolerance. |
-| `runDslProgram` | Compile arbitrary DSL code. Execute the program. Return metrics and pass status. |
+| `runDslProgram` | Render every written output surface at frames 1, 120, and 600 after warmup by default, at 960×540. Return one PNG contact sheet as MCP image content plus metrics for each surface and frame. |
 
 ### Analysis Tools (4)
 
