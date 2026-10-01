@@ -127,8 +127,10 @@ fn main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
   const webgpuAvailable = await hasWebGpuDevice()
   for (const backend of ['webgl2', 'webgpu']) {
     if (backend === 'webgpu' && !webgpuAvailable) {
-      await render(client, { backend }, /webgpu|adapter|device|backend/i)
-      console.log('authored-dsl: SKIP WebGPU positive render (no adapter); PASS fallback rejected')
+      // Native driver messages vary (including Dawn's external-instance error).
+      // An unavailable device must yield an error response and no image.
+      await render(client, { backend }, /"status":\s*"error"/)
+      console.log('authored-dsl: SKIP WebGPU positive render (no device); PASS fallback rejected')
       continue
     }
     const tinted = await render(client, { backend })
