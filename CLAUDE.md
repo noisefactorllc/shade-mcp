@@ -140,5 +140,11 @@ the Noisemaker repository root. For Portable's built-in Noisemaker DSL, set
 `SHADE_DSL_RENDERER_MODULE=https://shaders.noisedeck.app/1/noisemaker-shaders-core.esm.js`,
 `SHADE_DSL_ASSETS_BASE=https://shaders.noisedeck.app/1`, and
 `SHADE_DSL_USE_BUNDLES=true`. Keep Portable's viewer root/path/globals for the
-seven viewer-driven tools. The fresh batch does not register Portable's authored
-`user.*` effects; support for those requires shared browser-safe registration.
+seven viewer-driven tools. For authored `user.*` effects, pass `effects` as up to
+16 comma-separated Portable package IDs under `SHADE_EFFECTS_DIR` (the directory
+name for a flat effect). The fresh batch loads raw JSON and the requested backend's
+shader files through the harness server, then calls the shared Noisemaker
+`CanvasRenderer.registerPortableEffect` method. A runtime without that method
+rejects authored requests explicitly; built-in-only requests remain supported.
+Verify this path with `NOISEMAKER` and `PORTABLE` set to their source checkouts and
+`node scripts/authored-dsl-smoke.mjs`; release/pin/vendor qualification is separate.

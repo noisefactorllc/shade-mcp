@@ -85,7 +85,15 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           repository: noisefactorllc/noisemaker
+          ref: cb22a05eff9afed99fcf22a482b944c26f43e814
           path: noisemaker
+
+      # The authored composition fixture and codec are shared with Portable.
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          repository: noisefactorllc/portable
+          ref: fc4da6f802ba9ba7b61c2371b7997a57bcd9b21a
+          path: portable
 
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
@@ -106,3 +114,10 @@ jobs:
           # Runners have no GPU, so Chromium needs its software rasterizer.
           SHADE_SWIFTSHADER: '1'
         run: node scripts/browser-smoke.mjs
+
+      - name: Authored Portable DSL smoke test
+        env:
+          NOISEMAKER: ${{ github.workspace }}/noisemaker
+          PORTABLE: ${{ github.workspace }}/portable
+          SHADE_SWIFTSHADER: '1'
+        run: node scripts/authored-dsl-smoke.mjs

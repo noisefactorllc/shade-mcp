@@ -14,6 +14,13 @@ describe('runDslProgram batch inputs', () => {
       .rejects.toThrow('Capture frames must be strictly increasing')
   })
 
+  it('rejects traversal and oversized authored selections before opening the renderer', async () => {
+    await expect(runDslProgram(session, 'noise().write(o0)', { effects: '../outside' }))
+      .rejects.toThrow(/Invalid.*effect/)
+    await expect(runDslProgram(session, 'noise().write(o0)', { effects: Array(17).fill('user/one').join(',') }))
+      .rejects.toThrow(/16/)
+  })
+
   it('bounds the contact-sheet allocation before opening the renderer', async () => {
     await expect(runDslProgram(session, 'noise().write(o0)', {
       frames: [1, 2, 3], cellResolution: [1920, 1080],

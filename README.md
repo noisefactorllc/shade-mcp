@@ -40,8 +40,14 @@ it imports Noisemaker source modules from `/shaders/src/index.js` and assets fro
 set `SHADE_DSL_RENDERER_MODULE=https://shaders.noisedeck.app/1/noisemaker-shaders-core.esm.js`,
 `SHADE_DSL_ASSETS_BASE=https://shaders.noisedeck.app/1`, and
 `SHADE_DSL_USE_BUNDLES=true`; keep its viewer settings for the other browser tools.
-Portable `user.*` effects registered by its viewer are not loaded into the fresh
-DSL renderer.
+To use authored `user.*` effects, pass `effects` as comma-separated Portable
+package IDs under `SHADE_EFFECTS_DIR` (up to 16), such as `user/gradient,user/tint`.
+For a flat single-effect directory, use its directory name as the ID. The fresh
+renderer loads each package's raw `definition.json` and the requested backend's
+shader files. Omitting `effects` loads built-ins only. Authored registration
+requires a Noisemaker runtime with `CanvasRenderer.registerPortableEffect`;
+older CDN bundles return an explicit unsupported-runtime error. Viewer state
+is never inherited, and duplicate authored function names fail the batch.
 
 | Project | `SHADE_VIEWER_ROOT` | `SHADE_VIEWER_PATH` | `SHADE_GLOBALS_PREFIX` |
 |---------|---------------------|---------------------|------------------------|

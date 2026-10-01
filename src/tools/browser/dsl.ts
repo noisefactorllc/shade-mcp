@@ -5,6 +5,7 @@ import { getServerUrl } from '../../harness/server-manager.js'
 import { computeImageMetrics } from '../../harness/pixel-reader.js'
 import { toolResult } from '../tool-result.js'
 import { getConfig } from '../../config.js'
+import { resolveEffectIds } from '../resolve-effects.js'
 
 const resolution = z.tuple([z.number().int().min(1).max(1920), z.number().int().min(1).max(1080)])
 const frames = z.array(z.number().int().min(1).max(1200)).min(1).max(6)
@@ -13,6 +14,10 @@ const frames = z.array(z.number().int().min(1).max(1200)).min(1).max(6)
 
 export const runDslProgramSchema = {
   dsl: z.string().min(1).max(100_000).describe('Noisemaker DSL program'),
+  effects: z.string().min(1).max(4096)
+    .refine(value => value.split(',').every(id => /^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(id.trim())), 'Invalid authored effect ID')
+    .refine(value => value.split(',').length <= 16, 'Select at most 16 authored effects')
+    .optional().describe('Comma-separated Portable package IDs under SHADE_EFFECTS_DIR; omitted means built-in effects only'),
   backend: z.enum(['webgl2', 'webgpu']).default('webgl2').describe('Rendering backend'),
   warmup_frames: z.number().int().min(0).max(120).default(10).describe('Frames before the first capture frame'),
   frames: frames.default([1, 120, 600]).describe('Frames to capture after warmup'),
@@ -41,6 +46,7 @@ export async function runDslProgram(
   session: BrowserSession,
   dsl: string,
   options: {
+    effects?: string
     warmupFrames?: number
     frames?: number[]
     resolution?: [number, number]
@@ -50,7 +56,7 @@ export async function runDslProgram(
   } = {},
 ): Promise<any> {
   const input = z.object(runDslProgramSchema).parse({
-    dsl, backend: session.backend, warmup_frames: options.warmupFrames,
+    dsl, effects: options.effects, backend: session.backend, warmup_frames: options.warmupFrames,
     frames: options.frames, resolution: options.resolution,
     cell_resolution: options.cellResolution, uniforms: options.uniforms,
   })
@@ -59,6 +65,7 @@ export async function runDslProgram(
   const [cellWidth, cellHeight] = input.cell_resolution
   const warmupFrames = input.warmup_frames
   const config = getConfig()
+  const effectIds = input.effects ? [...new Set(resolveEffectIds({ effects: input.effects }, config.effectsDir))] : []
   if (width * height * captureFrames.length > 16_000_000) {
     throw new Error('Requested captures exceed the 16 million pixel batch limit')
   }
@@ -72,7 +79,7 @@ export async function runDslProgram(
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       const batch = await Promise.race<BatchResult>([
-        page.evaluate(async ({ rendererModule, assetsBase, useBundles, dsl, backend, width, height, cellWidth, cellHeight, captureFrames, warmupFrames, uniforms }) => {
+        page.evaluate(async ({ rendererModule, assetsBase, useBundles, effectUrls, dsl, backend, width, height, cellWidth, cellHeight, captureFrames, warmupFrames, uniforms }) => {
           const { CanvasRenderer, compile } = await import(rendererModule)
           const canvas = document.createElement('canvas')
           canvas.width = width
@@ -88,6 +95,34 @@ export async function runDslProgram(
           try {
             const manifest = await renderer.loadManifest()
             await renderer.loadEffects(Object.keys(manifest))
+            if (effectUrls.length && typeof renderer.registerPortableEffect !== 'function') {
+              throw new Error('Configured Noisemaker renderer does not support registerPortableEffect; use a qualified renderer with authored-effect registration')
+            }
+            for (const baseUrl of effectUrls) {
+              const definitionUrl = `${baseUrl}/definition.json`
+              const response = await fetch(definitionUrl)
+              if (!response.ok) throw new Error(`${definitionUrl}: HTTP ${response.status}`)
+              const definition = await response.json()
+              if (!Array.isArray(definition?.passes) || definition.passes.length === 0) {
+                throw new Error(`Portable effect ${baseUrl}: passes must be a nonempty array`)
+              }
+              // Keep the raw Portable definition: the analysis parser intentionally
+              // omits render metadata, enum paths, and some pass attributes.
+              definition.shaders = Object.create(null)
+              const language = backend === 'webgpu' ? 'wgsl' : 'glsl'
+              for (const pass of definition.passes) {
+                const program = pass?.program
+                if (typeof program !== 'string' || !/^[A-Za-z0-9_-]+$/.test(program)) {
+                  throw new Error(`Portable effect ${baseUrl}: invalid pass program`)
+                }
+                if (definition.shaders[program]) continue
+                const url = `${baseUrl}/${language}/${program}.${language}`
+                const source = await fetch(url)
+                if (!source.ok) throw new Error(`${url}: HTTP ${source.status}`)
+                definition.shaders[program] = { [language]: await source.text() }
+              }
+              await renderer.registerPortableEffect(definition)
+            }
             await renderer.compile(dsl)
             renderer.stop()
 
@@ -196,7 +231,7 @@ export async function runDslProgram(
               grid: { width: grid.width, height: grid.height, cell_width: cellWidth, cell_height: cellHeight, rows: surfaces, columns: captureFrames },
             }
           } catch (error: any) {
-            return { status: 'error' as const, error: error?.message || String(error) }
+            return { status: 'error' as const, error: error?.message || error?.detail || JSON.stringify(error) || String(error) }
           } finally {
             await renderer.dispose().catch(() => {})
             canvas.remove()
@@ -205,6 +240,7 @@ export async function runDslProgram(
           rendererModule: config.dslRendererModule.startsWith('/') ? `${getServerUrl()}${config.dslRendererModule}` : config.dslRendererModule,
           assetsBase: config.dslAssetsBase.startsWith('/') ? `${getServerUrl()}${config.dslAssetsBase}` : config.dslAssetsBase,
           useBundles: config.dslUseBundles,
+          effectUrls: effectIds.map(id => `${getServerUrl()}/effects/${id}`),
           dsl, backend: session.backend, width, height,
           cellWidth, cellHeight, captureFrames, warmupFrames, uniforms: options.uniforms,
         }) as Promise<BatchResult>,
@@ -236,13 +272,14 @@ export async function runDslProgram(
 export function registerRunDslProgram(server: McpServer): void {
   server.tool(
     'runDslProgram',
-    'Compile Noisemaker DSL in a fresh renderer and return a multi-frame, per-surface PNG grid with metrics.',
+    'Compile Noisemaker DSL with optional authored Portable packages in a fresh renderer and return a multi-frame, per-surface PNG grid with metrics.',
     runDslProgramSchema,
     async (args: any) => {
       const session = new BrowserSession({ backend: args.backend, blankPage: true })
       try {
         await session.setup()
         const result = await runDslProgram(session, args.dsl, {
+          effects: args.effects,
           warmupFrames: args.warmup_frames,
           frames: args.frames,
           resolution: args.resolution,
