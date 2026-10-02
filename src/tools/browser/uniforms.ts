@@ -68,6 +68,9 @@ export async function testUniformResponsiveness(
           return { pixels, width, height }
         }
         if (backend?.readPixels && backend?.textures) {
+          // A read issued right after a draw can return the previous frame;
+          // drain the submitted work first (same as runDslProgram).
+          await backend.device?.queue?.onSubmittedWorkDone?.()
           const surf = pipeline.graph?.renderSurface
           if (!surf) return null
           const candidates = ['global_' + surf + '_read']

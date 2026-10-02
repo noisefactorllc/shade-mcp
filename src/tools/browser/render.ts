@@ -107,12 +107,14 @@ export async function renderEffectFrame(
     try {
       // Read pixels and compute metrics
       const result = await page.evaluate(async ({ captureImage, globals, time }) => {
-        const renderer = (window as any)[globals.canvasRenderer]
         const pipeline = (window as any)[globals.renderingPipeline]
-        if (!renderer || !pipeline) return { status: 'error', backend: 'unknown', error: 'No renderer' }
+        if (!pipeline) return { status: 'error', backend: 'unknown', error: 'No renderer' }
 
         const backend = pipeline.backend
         const backendName = backend?.getName?.() || 'unknown'
+
+        const renderer = (window as any)[globals.canvasRenderer]
+        if (!renderer) return { status: 'error', backend: backendName, error: `No renderer on ${backendName}` }
 
         const canvas = renderer.canvas
 
@@ -160,6 +162,9 @@ export async function renderEffectFrame(
             if (time !== null && typeof renderer.render === 'function') renderer.render(time)
             for (let attempt = 0; attempt < 6 && !pixels; attempt++) {
               if (attempt > 0 && time !== null && typeof renderer.render === 'function') renderer.render(time)
+              // A read issued right after a draw can return the previous
+              // frame; drain the submitted work first (same as runDslProgram).
+              await backend.device?.queue?.onSubmittedWorkDone?.()
               for (const id of candidates) {
                 try {
                   const px = await backend.readPixels(id)

@@ -50,7 +50,7 @@ function installWebGpuFakeViewer(globals: ViewerGlobals, options: FakeViewerOpti
   w.__values = values
   let lastRenderTime = 0
 
-  const readPixels = async (_id: string) => {
+  const computeBytes = (): Uint8Array => {
     let rest: [number, number, number]
     if (options.uniforms) {
       const c = Math.round(values.u_amount * 255)
@@ -62,13 +62,24 @@ function installWebGpuFakeViewer(globals: ViewerGlobals, options: FakeViewerOpti
       rest = [200, 100, 50]
     }
     // bottom-up: the last raw row is the screen's top row.
-    return { data: fakeSurfaceData(false, [10, 20, 30], rest), width: WIDTH, height: HEIGHT }
+    return fakeSurfaceData(false, [10, 20, 30], rest)
+  }
+
+  // Models real WebGPU readback lag: each draw produces a new frame, but the
+  // async reader only serves frames the queue has drained. A read issued
+  // before onSubmittedWorkDone gets the PREVIOUS frame's bytes.
+  let rendered = computeBytes()
+  let served = rendered
+
+  const readPixels = async (_id: string) => {
+    return served ? { data: served, width: WIDTH, height: HEIGHT } : null
   }
 
   w[globals.renderingPipeline] = {
     backend: {
       getName: () => 'webgpu',
       textures: new Map([['global_frame_read', {}]]),
+      device: { queue: { onSubmittedWorkDone: async () => { served = rendered } } },
       readPixels,
     },
     graph: {
@@ -82,6 +93,7 @@ function installWebGpuFakeViewer(globals: ViewerGlobals, options: FakeViewerOpti
     canvas: { width: 2, height: 2 },
     render: (t: number) => {
       lastRenderTime = t
+      rendered = computeBytes()
       w.__redrawCalls = (w.__redrawCalls || 0) + 1
       w.__lastRedrawArg = t
     },
@@ -177,6 +189,21 @@ describe('backend-neutral frame readback (issue #28)', () => {
       expect(Array.from(withImage.lastImageData.data.slice(0, 4))).toEqual([10, 20, 30, 255])
     })
 
+    it('reads the requested timed frame, not the stale previous readback', async () => {
+      // The filter-effect fake varies with render time; a read issued before
+      // the queue drain would return the install-time frame (rest 10/0/0)
+      // instead of the paused frame at t=1.5 (rest 200/100/50).
+      installWebGpuFakeViewer(DEFAULT_GLOBALS, { filterEffect: true })
+      const session = makeSession('webgpu')
+      const w: any = (globalThis as any).window
+      const result = await renderEffectFrame(session, 'synth/noise', { warmupFrames: 2, time: 1.5 })
+
+      expect(result.status).toBe('ok')
+      expect(w.__lastRedrawArg).toBe(1.5)
+      const m: any = result.metrics
+      expect(m.mean_rgb[0]).toBeCloseTo((10 + 200 + 200) / 3 / 255, 5)
+    })
+
     it('names the backend when a readback is impossible', async () => {
       const w = installWebGpuFakeViewer(DEFAULT_GLOBALS)
       // Remove the async reader: the backend can no longer deliver pixels.
@@ -233,6 +260,9 @@ describe('backend-neutral frame readback (issue #28)', () => {
       expect(result.status).toBe('ok')
       expect(result.isFilterEffect).toBe(true)
       expect(result.temporalDiff).not.toBeNull()
+      // Frame 1 must be the freshly drawn frame at t=1.0, not a stale repeat
+      // of the t=0 readback.
+      expect(result.temporalDiff).toBeGreaterThan(0)
       expect(result.details).not.toContain('No GL context')
     })
 
