@@ -89,7 +89,12 @@ describe('testUniformResponsiveness result contract', () => {
   })
 
   it('reports non-ok and names the unresponsive uniform when one uniform is ignored', async () => {
-    installFakeViewer(DEFAULT_GLOBALS, UNIFORM_SPECS)
+    // Only amount and unused: the aggregation case must fail on the status
+    // contract alone, not on a measurement error (boom is covered below).
+    installFakeViewer(DEFAULT_GLOBALS, {
+      amount: UNIFORM_SPECS.amount,
+      unused: UNIFORM_SPECS.unused,
+    })
     const session = makeSession()
     const result = await testUniformResponsiveness(session, 'synth/noise')
 
