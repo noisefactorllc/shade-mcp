@@ -3,6 +3,26 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **`testUniformResponsiveness` no longer reports `ok` while uniforms fail.**
+  The overall status used to be `ok` as soon as any single uniform moved the
+  output, so an effect with one live control and ten dead ones read as
+  healthy, and `toolResult()` set no `isError`. The status is now `ok` only
+  when at least one uniform was tested and *every* tested uniform affected
+  output; `error` when any tested uniform did not respond or could not be
+  measured, with `details` naming those uniforms; `skipped` when nothing was
+  testable. Callers that gated on the old `ok` will see `error` for effects
+  with dead controls.
+- **The result now carries the measurements.** Each tested uniform is also
+  reported as a structured entry — `{ name, uniform, default_value,
+  test_value, luma_diff, max_channel_diff, responds }` (plus `error` when the
+  test render could not be captured) — and the result states the threshold
+  used (`0.002`). The legacy `tested_uniforms` strings (`name:pass` /
+  `name:fail` / `name:error`) are unchanged for compatibility.
+
 ## [0.2.2] — 2026-08-31
 
 The third 0.2.x regression in the same blind spot: this package is also

@@ -11,6 +11,8 @@ export const testUniformResponsivenessSchema = {
   backend: z.enum(['webgl2', 'webgpu']).default('webgl2').describe('Rendering backend'),
 }
 
+export const UNIFORM_RESPONSE_THRESHOLD = 0.002
+
 export async function testUniformResponsiveness(
   session: BrowserSession,
   effectId: string,
@@ -71,7 +73,9 @@ export async function testUniformResponsiveness(
 
       const effectGlobals = effect.instance.globals
       const tested: string[] = []
-      let anyResponded = false
+      const uniforms: Array<Record<string, any>> = []
+      const failedNames: string[] = []
+      const errorNames: string[] = []
 
       for (const [name, spec] of Object.entries(effectGlobals) as any[]) {
         if (!spec.uniform) continue
@@ -86,7 +90,14 @@ export async function testUniformResponsiveness(
         if (pipeline.setUniform) pipeline.setUniform(spec.uniform, testVal)
         else if (pipeline.globalUniforms) pipeline.globalUniforms[spec.uniform] = testVal
 
-        const testMetrics = captureMetrics()
+        let testMetrics: number[] | null = null
+        let measureError: string | null = null
+        try {
+          testMetrics = captureMetrics()
+        } catch (err) {
+          measureError = err instanceof Error ? err.message : String(err)
+        }
+
         if (testMetrics) {
           const lumaDiff = Math.abs(
             (testMetrics[0] + testMetrics[1] + testMetrics[2]) / 3 -
@@ -97,14 +108,37 @@ export async function testUniformResponsiveness(
             Math.abs(testMetrics[1] - baseline[1]),
             Math.abs(testMetrics[2] - baseline[2])
           )
-          if (lumaDiff > 0.002 || maxChannelDiff > 0.002) {
-            anyResponded = true
+          // This function is serialized into the page: the threshold must stay
+          // a literal, kept in sync with UNIFORM_RESPONSE_THRESHOLD.
+          const responds = lumaDiff > 0.002 || maxChannelDiff > 0.002
+          uniforms.push({
+            name,
+            uniform: spec.uniform,
+            default_value: defaultVal,
+            test_value: testVal,
+            luma_diff: lumaDiff,
+            max_channel_diff: maxChannelDiff,
+            responds,
+          })
+          if (responds) {
             tested.push(`${name}:pass`)
           } else {
+            failedNames.push(name)
             tested.push(`${name}:fail`)
           }
         } else {
+          errorNames.push(name)
           tested.push(`${name}:error`)
+          uniforms.push({
+            name,
+            uniform: spec.uniform,
+            default_value: defaultVal,
+            test_value: testVal,
+            luma_diff: null,
+            max_channel_diff: null,
+            responds: false,
+            error: measureError ?? 'Failed to capture test render',
+          })
         }
 
         // Restore default
@@ -112,10 +146,30 @@ export async function testUniformResponsiveness(
         else if (pipeline.globalUniforms) pipeline.globalUniforms[spec.uniform] = defaultVal
       }
 
+      let status: string
+      let details: string
+      if (tested.length === 0) {
+        status = 'skipped'
+        details = 'No testable uniforms'
+      } else {
+        const problems: string[] = []
+        if (errorNames.length > 0) problems.push(`could not be measured: ${errorNames.join(', ')}`)
+        if (failedNames.length > 0) problems.push(`did not affect output: ${failedNames.join(', ')}`)
+        if (problems.length > 0) {
+          status = 'error'
+          details = `Uniforms ${problems.join('; ')}`
+        } else {
+          status = 'ok'
+          details = 'Uniforms affect output'
+        }
+      }
+
       return {
-        status: anyResponded ? 'ok' : (tested.length === 0 ? 'skipped' : 'error'),
+        status,
         tested_uniforms: tested,
-        details: anyResponded ? 'Uniforms affect output' : (tested.length === 0 ? 'No testable uniforms' : 'No uniforms affected output')
+        uniforms,
+        threshold: 0.002,
+        details,
       }
     }, session.globals)
 
@@ -132,7 +186,11 @@ export async function testUniformResponsiveness(
 export function registerTestUniformResponsiveness(server: McpServer): void {
   server.tool(
     'testUniformResponsiveness',
-    'For each uniform:\n1. Render a baseline.\n2. Change the uniform value.\n3. Compare the output.\nReturn a pass/fail result for each uniform.',
+    'For each uniform:\n1. Render a baseline.\n2. Change the uniform value.\n3. Compare the output.\n' +
+        'Status is ok only when at least one uniform was tested and every tested uniform affected output; ' +
+        'error when any tested uniform did not respond or could not be measured (details names them); ' +
+        'skipped when nothing was testable. Each tested uniform is reported with its test value, luma and ' +
+        'max channel deltas against the 0.002 threshold.',
     testUniformResponsivenessSchema,
     async (args: any) => {
       const config = getConfig()
