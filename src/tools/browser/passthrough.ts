@@ -33,15 +33,19 @@ export async function testNoPassthrough(
     }, { timeout: session.timeoutMs })
 
     // Check if filter effect and test passthrough
-    const result = await page.evaluate((globals) => {
+    const result = await page.evaluate(async (globals) => {
       const w = window as any
       const pipeline = w[globals.renderingPipeline]
       const effect = w[globals.currentEffect]
       if (!pipeline || !effect) return { status: 'error', isFilterEffect: false, similarity: null, details: 'No effect loaded' }
 
       const renderer = w[globals.canvasRenderer]
-      const gl = pipeline.backend?.gl
-      if (!renderer || !gl) return { status: 'error', isFilterEffect: false, similarity: null, details: 'No GL context' }
+      const backend = pipeline.backend
+      const backendName = backend?.getName?.() || 'unknown'
+      if (!renderer) return { status: 'error', isFilterEffect: false, similarity: null, details: 'No renderer' }
+      if (!backend?.gl && !(backend?.readPixels && backend?.textures)) {
+        return { status: 'error', isFilterEffect: false, similarity: null, backend: backendName, details: `No readable pixels on ${backendName} backend` }
+      }
 
       // Check if filter effect (has inputTex in passes)
       const passes = pipeline.graph?.passes || []
@@ -52,19 +56,55 @@ export async function testNoPassthrough(
 
       if (!isFilter) return { status: 'skipped', isFilterEffect: false, similarity: null, details: 'Not a filter effect' }
 
-      const canvas = renderer.canvas
-      const width = canvas.width, height = canvas.height
+      // Read the rendered frame through the backend. WebGL2 reads the default
+      // framebuffer synchronously; a backend without a GL context (WebGPU)
+      // reads the offscreen render surface through its async texture reader —
+      // the same surface and candidate fallback the parity capture uses.
+      async function readFrame(t: number): Promise<{ pixels: Uint8Array; width: number; height: number } | null> {
+        renderer.render(t)
+        const gl = backend?.gl
+        if (gl) {
+          const canvas = renderer.canvas
+          const width = canvas.width, height = canvas.height
+          const pixels = new Uint8Array(width * height * 4)
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+          gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
+          return { pixels, width, height }
+        }
+        if (backend?.readPixels && backend?.textures) {
+          const surf = pipeline.graph?.renderSurface
+          if (!surf) return null
+          const candidates = ['global_' + surf + '_read']
+          try {
+            const nodes: string[] = []
+            for (const k of backend.textures.keys()) if (/node_\d+_out/.test(k)) nodes.push(k)
+            nodes.sort((a: string, c: string) => parseInt(a.match(/node_(\d+)/)![1], 10) - parseInt(c.match(/node_(\d+)/)![1], 10))
+            if (nodes.length) candidates.push(nodes[nodes.length - 1])
+          } catch (e) { /* textures map not iterable */ }
+          for (const id of candidates) {
+            try {
+              const px = await backend.readPixels(id)
+              if (px && px.width && px.height && px.data) {
+                const raw = px.data instanceof Float32Array
+                  ? Uint8Array.from(px.data, (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 255))
+                  : new Uint8Array(px.data)
+                return { pixels: raw, width: px.width, height: px.height }
+              }
+            } catch (e) { /* try next candidate */ }
+          }
+          return null
+        }
+        return null
+      }
 
       // Render two frames at different times and compare
-      renderer.render(0)
-      const pixels0 = new Uint8Array(width * height * 4)
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-      gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels0)
-
-      renderer.render(1.0)
-      const pixels1 = new Uint8Array(width * height * 4)
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-      gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels1)
+      const frame0 = await readFrame(0)
+      const frame1 = await readFrame(1.0)
+      if (!frame0 || !frame1) {
+        return { status: 'error', isFilterEffect: true, similarity: null, backend: backendName, details: `Failed to read pixels on ${backendName}` }
+      }
+      const pixels0 = frame0.pixels, pixels1 = frame1.pixels
+      const width = frame0.width, height = frame0.height
 
       // Compare output at two times
       const pixelCount = width * height

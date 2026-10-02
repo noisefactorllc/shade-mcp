@@ -41,7 +41,7 @@ export async function testUniformResponsiveness(
       if (w[globals.setPausedTime]) w[globals.setPausedTime](0)
     }, session.globals)
 
-    const result = await page.evaluate((globals) => {
+    const result = await page.evaluate(async (globals) => {
       const w = window as any
       const pipeline = w[globals.renderingPipeline]
       const effect = w[globals.currentEffect]
@@ -50,16 +50,55 @@ export async function testUniformResponsiveness(
       }
 
       const renderer = w[globals.canvasRenderer]
-      const gl = pipeline.backend?.gl
+      const backend = pipeline.backend
+      const backendName = backend?.getName?.() || 'unknown'
 
-      function captureMetrics() {
-        if (!renderer || !gl) return null
+      // Read the rendered frame through the backend. WebGL2 reads the default
+      // framebuffer synchronously; a backend without a GL context (WebGPU)
+      // reads the offscreen render surface through its async texture reader —
+      // the same surface and candidate fallback the parity capture uses.
+      async function readFrame(): Promise<{ pixels: Uint8Array; width: number; height: number } | null> {
+        const gl = backend?.gl
+        if (gl) {
+          const canvas = renderer.canvas
+          const width = canvas.width, height = canvas.height
+          const pixels = new Uint8Array(width * height * 4)
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+          gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
+          return { pixels, width, height }
+        }
+        if (backend?.readPixels && backend?.textures) {
+          const surf = pipeline.graph?.renderSurface
+          if (!surf) return null
+          const candidates = ['global_' + surf + '_read']
+          try {
+            const nodes: string[] = []
+            for (const k of backend.textures.keys()) if (/node_\d+_out/.test(k)) nodes.push(k)
+            nodes.sort((a: string, c: string) => parseInt(a.match(/node_(\d+)/)![1], 10) - parseInt(c.match(/node_(\d+)/)![1], 10))
+            if (nodes.length) candidates.push(nodes[nodes.length - 1])
+          } catch (e) { /* textures map not iterable */ }
+          for (const id of candidates) {
+            try {
+              const px = await backend.readPixels(id)
+              if (px && px.width && px.height && px.data) {
+                const raw = px.data instanceof Float32Array
+                  ? Uint8Array.from(px.data, (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 255))
+                  : new Uint8Array(px.data)
+                return { pixels: raw, width: px.width, height: px.height }
+              }
+            } catch (e) { /* try next candidate */ }
+          }
+          return null
+        }
+        return null
+      }
+
+      async function captureMetrics() {
+        if (!renderer) return null
         renderer.render(0)
-        const canvas = renderer.canvas
-        const width = canvas.width, height = canvas.height
-        const pixels = new Uint8Array(width * height * 4)
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
+        const read = await readFrame()
+        if (!read) return null
+        const { pixels, width, height } = read
         const count = width * height
         let sumR = 0, sumG = 0, sumB = 0
         for (let i = 0; i < pixels.length; i += 4) {
@@ -68,8 +107,8 @@ export async function testUniformResponsiveness(
         return [sumR / count, sumG / count, sumB / count]
       }
 
-      const baseline = captureMetrics()
-      if (!baseline) return { status: 'error', tested_uniforms: [], details: 'Failed to capture baseline' }
+      const baseline = await captureMetrics()
+      if (!baseline) return { status: 'error', tested_uniforms: [], backend: backendName, details: `Failed to capture baseline on ${backendName}` }
 
       const effectGlobals = effect.instance.globals
       const tested: string[] = []
@@ -93,7 +132,7 @@ export async function testUniformResponsiveness(
         let testMetrics: number[] | null = null
         let measureError: string | null = null
         try {
-          testMetrics = captureMetrics()
+          testMetrics = await captureMetrics()
         } catch (err) {
           measureError = err instanceof Error ? err.message : String(err)
         }

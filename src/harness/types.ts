@@ -67,6 +67,7 @@ export interface CompileResult {
 export interface RenderResult {
   status: 'ok' | 'error'
   backend: string
+  error?: string
   frame?: { image_uri?: string; width: number; height: number }
   metrics?: ImageMetrics
   console_errors?: string[]

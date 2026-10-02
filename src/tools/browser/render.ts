@@ -106,13 +106,15 @@ export async function renderEffectFrame(
 
     try {
       // Read pixels and compute metrics
-      const result = await page.evaluate(({ captureImage, globals, time }) => {
+      const result = await page.evaluate(async ({ captureImage, globals, time }) => {
         const renderer = (window as any)[globals.canvasRenderer]
         const pipeline = (window as any)[globals.renderingPipeline]
         if (!renderer || !pipeline) return { status: 'error', backend: 'unknown', error: 'No renderer' }
 
+        const backend = pipeline.backend
+        const backendName = backend?.getName?.() || 'unknown'
+
         const canvas = renderer.canvas
-        const gl = pipeline.backend?.gl
 
         // Timed capture only: after the pause the frame loop is stopped, so the
         // framebuffer still holds the last warmup frame rather than the
@@ -128,14 +130,68 @@ export async function renderEffectFrame(
 
         let pixels: Uint8Array | null = null
         let width = canvas.width, height = canvas.height
+        // Backend-neutral readbacks are already normalized to screen
+        // orientation below; the WebGL default-framebuffer read is bottom-up.
+        let topDown = false
 
+        const gl = backend?.gl
         if (gl) {
           pixels = new Uint8Array(width * height * 4)
           gl.bindFramebuffer(gl.FRAMEBUFFER, null)
           gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
+        } else if (backend?.readPixels && backend?.textures) {
+          // No GL context (WebGPU): read the offscreen render surface through
+          // the backend's async texture reader — the same surface and
+          // candidate fallback the parity capture uses. Each retry redraws at
+          // the requested time, because the async copy may still deliver the
+          // previous frame right after a draw.
+          const surf = pipeline.graph?.renderSurface
+          if (surf) {
+            const candidates = ['global_' + surf + '_read']
+            try {
+              const nodes: string[] = []
+              for (const k of backend.textures.keys()) if (/node_\d+_out/.test(k)) nodes.push(k)
+              nodes.sort((a: string, c: string) => parseInt(a.match(/node_(\d+)/)![1], 10) - parseInt(c.match(/node_(\d+)/)![1], 10))
+              if (nodes.length) candidates.push(nodes[nodes.length - 1])
+            } catch (e) { /* textures map not iterable */ }
+            // The parity capture draws twice before its first readback; mirror
+            // that here so an async in-flight copy cannot deliver the frame
+            // before the requested one.
+            if (time !== null && typeof renderer.render === 'function') renderer.render(time)
+            for (let attempt = 0; attempt < 6 && !pixels; attempt++) {
+              if (attempt > 0 && time !== null && typeof renderer.render === 'function') renderer.render(time)
+              for (const id of candidates) {
+                try {
+                  const px = await backend.readPixels(id)
+                  if (px && px.width && px.height && px.data) {
+                    width = px.width; height = px.height
+                    const raw = px.data instanceof Float32Array
+                      ? Uint8Array.from(px.data, (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 255))
+                      : new Uint8Array(px.data)
+                    // WebGPU readback is bottom-up; flip the rows to top-down
+                    // so the capture orientation matches the WebGL2 read.
+                    pixels = new Uint8Array(width * height * 4)
+                    const rowBytes = width * 4
+                    for (let y = 0; y < height; y++) {
+                      pixels.set(raw.subarray((height - 1 - y) * rowBytes, (height - y) * rowBytes), y * rowBytes)
+                    }
+                    topDown = true
+                    break
+                  }
+                } catch (e) { /* try next candidate */ }
+              }
+              if (!pixels) await new Promise((res) => setTimeout(res, 80))
+            }
+          }
         }
 
-        if (!pixels) return { status: 'error', backend: 'unknown', error: 'Failed to read pixels' }
+        if (!pixels) {
+          return {
+            status: 'error' as const,
+            backend: backendName,
+            error: `Failed to read pixels on ${backendName}: no readable render surface`,
+          }
+        }
 
         // Compute metrics
         const pixelCount = width * height
@@ -180,7 +236,10 @@ export async function renderEffectFrame(
           const imgData = ctx.createImageData(width, height)
           for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
-              const srcIdx = ((height - 1 - y) * width + x) * 4
+              // Bottom-up WebGL reads need a vertical flip to reach screen
+              // orientation; backend-neutral reads are already top-down.
+              const srcRow = topDown ? y : (height - 1 - y)
+              const srcIdx = (srcRow * width + x) * 4
               const dstIdx = (y * width + x) * 4
               imgData.data[dstIdx] = pixels[srcIdx]
               imgData.data[dstIdx + 1] = pixels[srcIdx + 1]
