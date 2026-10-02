@@ -16,7 +16,10 @@ if (!NM || !existsSync(`${NM}/demo/shaders/index.html`)) {
   process.exit(2)
 }
 
-const server = spawn('node', ['dist/index.js'], {
+// The server is the dist drop built in this checkout; resolve it against this
+// script's own directory so the smoke works from any working directory (an
+// invocation from elsewhere fails with "Cannot find module dist/index.js").
+const server = spawn('node', [new URL('../dist/index.js', import.meta.url).pathname], {
   stdio: ['pipe', 'pipe', 'inherit'],
   env: {
     ...process.env,
