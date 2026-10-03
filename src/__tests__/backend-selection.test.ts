@@ -32,6 +32,9 @@ interface FakeViewerOptions {
   switchBackend?: boolean
   // currentBackend() convention value (default 'glsl').
   currentBackendValue?: string
+  // Whether the viewer exposes its current effect's identity at all (default
+  // true). false models a viewer with no currentEffect global.
+  exposeIdentity?: boolean
 }
 
 function installFakeViewer(globals: ViewerGlobals, options: FakeViewerOptions): any {
@@ -60,7 +63,7 @@ function installFakeViewer(globals: ViewerGlobals, options: FakeViewerOptions): 
     globalUniforms: {},
   }
   w[globals.renderingPipeline] = pipeline
-  w[globals.currentEffect] = entry('synth/previous')
+  if (options.exposeIdentity !== false) w[globals.currentEffect] = entry('synth/previous')
   w[globals.currentBackend] = () => state.backendKind
   w[globals.pipelineGeneration!] = 0
   w[globals.canvasRenderer] = {
@@ -81,11 +84,11 @@ function installFakeViewer(globals: ViewerGlobals, options: FakeViewerOptions): 
     dispatchEvent(ev: Event) {
       if (ev.type !== 'change' || options.loadDelayMs === null) return
       const id = selectEl.value
-      w[globals.currentEffect] = entry(id)
+      if (options.exposeIdentity !== false) w[globals.currentEffect] = entry(id)
       state.status = `selected ${id}`
       setTimeout(() => {
         const shown = options.showsEffect ?? id
-        if (shown !== id) w[globals.currentEffect] = entry(shown)
+        if (options.exposeIdentity !== false && shown !== id) w[globals.currentEffect] = entry(shown)
         state.graph = { passes: [{ name: `${shown.split('/')[1]}-pass`, inputs: {} }], renderSurface: 'frame' }
         w[globals.pipelineGeneration!] = (w[globals.pipelineGeneration!] || 0) + 1
         state.status = `compiled ${shown}`
@@ -198,6 +201,20 @@ describe('browser verbs bind results to the requested effect (issue #34)', () =>
       // The page backend is still the one it started on.
       expect((globalThis as any).window[DEFAULT_GLOBALS.currentBackend]()).toBe('glsl')
     })
+
+    it(`${name} fails closed when the viewer does not expose its current effect's identity`, async () => {
+      // The pipeline rebuilds for the selection, but the page never reports
+      // which effect it is showing: the result is not bound to the request,
+      // so the verb must not report ok.
+      installFakeViewer(DEFAULT_GLOBALS, { requested: 'synth/requested', loadDelayMs: 20, exposeIdentity: false })
+      const session = makeSession('webgl2')
+
+      const result = await run(session, 'synth/requested')
+
+      expect(result.status).toBe('error')
+      const message = result.message ?? result.error ?? result.details
+      expect(message).toMatch(/does not report which effect/)
+    })
   }
 
   describe('testPixelParity', () => {
@@ -220,6 +237,27 @@ describe('browser verbs bind results to the requested effect (issue #34)', () =>
       expect(result.status).toBe('ok')
       expect(result.effect_id).toBe('synth/requested')
       expect(result.backend).toBe('WebGPU')
+    })
+
+    it('returns status error when a leg ends up showing a different effect', async () => {
+      installFakeViewer(DEFAULT_GLOBALS, { requested: 'synth/requested', loadDelayMs: 20, showsEffect: 'synth/other', switchBackend: true })
+      const session = makeSession('webgl2')
+
+      const result = await testPixelParity(session, 'synth/requested', { seed: 7 })
+
+      expect(result.status).toBe('error')
+      expect(result.details).toContain('synth/other')
+      expect(result.effect_id).toBe('synth/other')
+    })
+
+    it('fails closed when the viewer does not expose its current effect\'s identity', async () => {
+      installFakeViewer(DEFAULT_GLOBALS, { requested: 'synth/requested', loadDelayMs: 20, exposeIdentity: false })
+      const session = makeSession('webgl2')
+
+      const result = await testPixelParity(session, 'synth/requested', { seed: 7 })
+
+      expect(result.status).toBe('error')
+      expect(result.details).toMatch(/does not report which effect/)
     })
 
     it('returns status error when the WebGPU leg cannot reach the backend', async () => {

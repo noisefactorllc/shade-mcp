@@ -147,7 +147,8 @@ function selectAndAwaitEffect({ effectId, globals, timeout }: {
         resolve({
           status: 'error',
           message: `Timed out after ${timeout} ms waiting for the viewer to finish building ${effectId}`
-            + (idNow && idNow !== effectId ? ` (the viewer is still showing ${idNow})` : ''),
+            + (idNow && idNow !== effectId ? ` (the viewer is still showing ${idNow})`
+              : !idNow ? ' (the viewer does not report which effect it is showing)' : ''),
           effectId: idNow ?? null,
           backend: backendName,
           passes: null,
@@ -175,6 +176,20 @@ function selectAndAwaitEffect({ effectId, globals, timeout }: {
       // always wait for it.
       const hasRebuildSignal = generation !== null || ('isCompiling' in p)
 
+      // A confirmed mismatch: the page rebuilt after this selection but now
+      // reports a different, readable effect id. Fail closed immediately with
+      // the page-confirmed identity instead of measuring the wrong graph.
+      if (ready && (rebuilt || sawCompiling) && idNow !== null && idNow !== effectId) {
+        resolve({
+          status: 'error',
+          message: `The viewer is showing ${idNow}, not the requested ${effectId}`,
+          effectId: idNow,
+          backend: backendName,
+          passes: null,
+        })
+        return
+      }
+
       // Compile failure. Two guards against the PREVIOUS effect's failure
       // text: the failure must be bound to this selection (identity or a
       // rebuild observed) and must be fresh (the text changed, or the
@@ -190,16 +205,18 @@ function selectAndAwaitEffect({ effectId, globals, timeout }: {
         return
       }
 
-      // Ready: a graph built after this selection, when the viewer already
-      // showed this exact effect, fully built, before the selection and
-      // nothing changed since, or when the viewer offers no rebuild signal
-      // and confirms the requested id.
-      if (ready && (rebuilt || sawCompiling
+      // Ready, bound to the request: a graph built after this selection whose
+      // identity the page confirms, when the viewer already showed this exact
+      // effect, fully built, before the selection and nothing changed since,
+      // or when the viewer offers no rebuild signal and confirms the
+      // requested id. A rebuild WITHOUT page-confirmed identity is never
+      // accepted — the wait keeps polling and fails closed on timeout.
+      if (ready && ((rebuilt || sawCompiling) && idMatches
         || (before.effectId === effectId && before.ready && !statusChanged)
         || (!hasRebuildSignal && idMatches))) {
         resolve({
           status: 'ok',
-          effectId: idNow ?? null,
+          effectId: idNow,
           backend: backendName,
           passes: passes.map((pass: any, i: number) => ({ id: pass.name || `pass_${i}`, status: 'ok' as const })),
         })
@@ -481,13 +498,16 @@ export class BrowserSession {
    * Selects an effect in the viewer and waits until the page actually built
    * it (issue #34): the wait resolves only when the viewer's current effect
    * is the requested id — or the pipeline provably rebuilt after this
-   * selection — and the graph finished compiling. Status text is NOT a
-   * readiness signal: right after a selection it still describes the
-   * previous effect, which is how verbs ended up measuring the old graph.
+   * selection AND the page confirms the id — and the graph finished
+   * compiling. Status text is NOT a readiness signal: right after a
+   * selection it still describes the previous effect, which is how verbs
+   * ended up measuring the old graph.
    *
    * Returns the page-confirmed outcome: status 'error' when the wait timed
-   * out, the viewer reported a compile failure bound to this selection, or
-   * the page ended up showing a different effect than the one requested.
+   * out, the viewer reported a compile failure bound to this selection, the
+   * page ended up showing a different effect than the one requested, or the
+   * page does not expose the current effect's identity at all (fail closed —
+   * an unbound result is never reported as ok).
    */
   async selectEffect(effectId: string): Promise<EffectSelectionResult> {
     const page = this.page!
@@ -500,6 +520,16 @@ export class BrowserSession {
         ...outcome,
         status: 'error',
         message: `The viewer is showing ${outcome.effectId}, not the requested ${effectId}`,
+      }
+    }
+    // Defense in depth behind the in-page wait, which only accepts a ready
+    // graph when the page confirms the requested id: a result whose identity
+    // cannot be confirmed is an error, never a silent ok.
+    if (outcome.status === 'ok' && outcome.effectId === null) {
+      return {
+        ...outcome,
+        status: 'error',
+        message: `The viewer does not report which effect it is showing; cannot confirm ${effectId}`,
       }
     }
     return outcome

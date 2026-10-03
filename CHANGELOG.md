@@ -19,7 +19,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `currentEffect` global confirming the requested id), `setBackend()`
   rejects on timeout, and every result reports the page-confirmed effect id
   (`effect_id`) and the actual backend (`pipeline.backend.getName()`).
-  A disagreement with the request is a `status: 'error'` result.
+  A disagreement with the request is a `status: 'error'` result, and when the
+  viewer does not expose its current effect's identity at all the verbs fail
+  closed with an error instead of reporting an unconfirmed result.
 
 - **`testNoPassthrough` now compares the rendered output with the input
   texture the effect consumes, at one fixed paused time.** Filter
