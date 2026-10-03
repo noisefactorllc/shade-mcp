@@ -1,5 +1,6 @@
 import { chromium, type Browser, type BrowserContext, type Page, type ConsoleMessage, type Route } from 'playwright'
-import { resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import { existsSync } from 'node:fs'
 import type { Backend } from '../config.js'
 import type { BrowserSessionOptions, CompileResult, RenderResult, BenchmarkResult, ImageMetrics, ViewerGlobals } from './types.js'
 import { DEFAULT_GLOBALS, globalsFromPrefix } from './types.js'
@@ -13,7 +14,11 @@ interface ConsoleEntry {
   text: string
 }
 
-function getBrowserLaunchOptions(headless: boolean, backend: Backend) {
+function getBrowserLaunchOptions(headless: boolean, backend: Backend): {
+  headless: boolean
+  args: string[]
+  env?: Record<string, string>
+} {
   const args = ['--disable-gpu-sandbox']
 
   if (backend === 'webgpu') {
@@ -38,6 +43,31 @@ function getBrowserLaunchOptions(headless: boolean, backend: Backend) {
   }
 
   return { headless, args }
+}
+
+function swiftshaderEnabled(): boolean {
+  return process.env.SHADE_SWIFTSHADER === '1' || process.env.SHADE_SWIFTSHADER === 'true'
+}
+
+/**
+ * GPU-less machines usually have no system Vulkan driver either, so Dawn's
+ * WebGPU backend finds no ICD: adapter enumeration is erratic and device
+ * requests die with Dawn's "A valid external Instance reference no longer
+ * exists". Chromium ships its own SwiftShader Vulkan ICD next to the browser
+ * binary — point the Vulkan loader at it so WebGPU renders deterministically.
+ */
+export function swiftshaderVulkanEnv(): Record<string, string> {
+  try {
+    const bundleDir = dirname(chromium.executablePath())
+    const icd = join(bundleDir, 'vk_swiftshader_icd.json')
+    if (!existsSync(icd)) return {}
+    const ld = process.env.LD_LIBRARY_PATH ? `${bundleDir}:${process.env.LD_LIBRARY_PATH}` : bundleDir
+    // VK_DRIVER_FILES is the loader-1.3.4+ variable; VK_ICD_FILENAMES covers
+    // older loaders. Chromium 153 ignores the legacy name, so both are set.
+    return { VK_DRIVER_FILES: icd, VK_ICD_FILENAMES: icd, LD_LIBRARY_PATH: ld }
+  } catch {
+    return {}
+  }
 }
 
 export class BrowserSession {
@@ -82,9 +112,15 @@ export class BrowserSession {
       this.baseUrl = await acquireServer(this.options.viewerPort, this.options.viewerRoot, this.options.effectsDir)
       this._serverAcquired = true
 
-      this.browser = await chromium.launch(
-        getBrowserLaunchOptions(this.options.headless, this.options.backend)
-      )
+      const launchOptions = getBrowserLaunchOptions(this.options.headless, this.options.backend)
+      // Only WebGPU sessions run through Dawn's Vulkan backend; pointing the
+      // loader at the SwiftShader ICD must not change what the WebGL2 tools
+      // render on machines with a real GL stack.
+      if (this.options.backend === 'webgpu' && swiftshaderEnabled()) {
+        const env = swiftshaderVulkanEnv()
+        if (Object.keys(env).length > 0) launchOptions.env = env
+      }
+      this.browser = await chromium.launch(launchOptions)
 
       const viewportSize = process.env.CI
         ? { width: 256, height: 256 }

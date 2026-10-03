@@ -5,7 +5,10 @@ import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
 // A launch failure is the cheapest way to exercise the error path in setup()
 // without a real browser.
 vi.mock('playwright', () => ({
-  chromium: { launch: vi.fn(async () => { throw new Error('launch failed') }) },
+  chromium: {
+    launch: vi.fn(async () => { throw new Error('launch failed') }),
+    executablePath: vi.fn(() => '/tmp/shade-mcp-test-vk-bundle/chrome-headless-shell'),
+  },
 }))
 
 import { chromium } from 'playwright'
@@ -106,6 +109,46 @@ describe('browser session lifecycle', () => {
     const args = vi.mocked(chromium.launch).mock.calls.at(-1)?.[0]?.args ?? []
     expect(args).toContain('--enable-unsafe-swiftshader')
     vi.unstubAllEnvs()
+  })
+
+  it('pins the bundled SwiftShader Vulkan ICD for WebGPU sessions', async () => {
+    // Without an ICD the Vulkan loader finds no driver, Dawn's adapter
+    // enumeration is erratic, and device requests die with "A valid external
+    // Instance reference no longer exists". The browser bundle ships its own
+    // SwiftShader ICD next to the binary; WebGPU sessions must point the
+    // loader at it.
+    const bundleDir = '/tmp/shade-mcp-test-vk-bundle'
+    mkdirSync(bundleDir, { recursive: true })
+    writeFileSync(resolve(bundleDir, 'vk_swiftshader_icd.json'), '{}')
+    vi.stubEnv('SHADE_SWIFTSHADER', '1')
+    const session = new BrowserSession({ backend: 'webgpu', headless: true,
+      viewerPort: 0, viewerRoot: tmpDir, effectsDir: tmpEffects })
+    await expect(session.setup()).rejects.toThrow('launch failed')
+    const env = vi.mocked(chromium.launch).mock.calls.at(-1)?.[0]?.env
+    expect(env?.VK_DRIVER_FILES).toBe(resolve(bundleDir, 'vk_swiftshader_icd.json'))
+    expect(env?.VK_ICD_FILENAMES).toBe(resolve(bundleDir, 'vk_swiftshader_icd.json'))
+    expect(env?.LD_LIBRARY_PATH).toContain(bundleDir)
+    vi.unstubAllEnvs()
+  })
+
+  it('leaves the launch environment alone outside SwiftShader WebGPU', async () => {
+    // WebGL2 sessions and non-SwiftShader WebGPU must not change which GL or
+    // Vulkan stack renders.
+    const session = makeSession()
+    await expect(session.setup()).rejects.toThrow('launch failed')
+    expect(vi.mocked(chromium.launch).mock.calls.at(-1)?.[0]?.env).toBeUndefined()
+    expect(vi.mocked(chromium.executablePath)).not.toHaveBeenCalled()
+    // A bundle without the ICD must also launch with no environment changes.
+    vi.stubEnv('SHADE_SWIFTSHADER', '1')
+    const emptyBundle = '/tmp/shade-mcp-test-vk-bundle-empty'
+    mkdirSync(emptyBundle, { recursive: true })
+    vi.mocked(chromium.executablePath).mockReturnValue(resolve(emptyBundle, 'chrome-headless-shell'))
+    const webgpu = new BrowserSession({ backend: 'webgpu', headless: true,
+      viewerPort: 0, viewerRoot: tmpDir, effectsDir: tmpEffects })
+    await expect(webgpu.setup()).rejects.toThrow('launch failed')
+    expect(vi.mocked(chromium.launch).mock.calls.at(-1)?.[0]?.env).toBeUndefined()
+    vi.unstubAllEnvs()
+    rmSync(emptyBundle, { recursive: true, force: true })
   })
 
   it('teardown on a session that was never set up releases nothing', async () => {
