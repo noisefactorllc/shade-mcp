@@ -143,17 +143,19 @@ fn main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
       // The device probe is optimistic: CI runners intermittently report a
       // device that Dawn reclaims before the renderer opens its own page
       // ("A valid external Instance reference no longer exists."). One fresh
-      // attempt decides whether the device is real; a repeated device-class
+      // attempt decides whether the device is real; a repeated device-loss
       // failure means this environment has no usable device and must behave
-      // exactly like the no-device path. Non-device errors are never retried.
-      const deviceError = /device|adapter|instance|driver|webgpu|gpu/i
+      // exactly like the no-device path. The matcher names only device-loss
+      // errors, so shader, pipeline and path failures are never retried and
+      // always fail the run.
+      const deviceLoss = /external instance|device lost|context lost/i
       let attempt = await renderRaw(client, { backend })
-      if (attempt.isError && !deviceError.test(attempt.text)) {
-        assert.fail(`webgpu: render failed with a non-device error: ${attempt.text}`)
+      if (attempt.isError && !deviceLoss.test(attempt.text)) {
+        assert.fail(`webgpu: render failed with a non-device-loss error: ${attempt.text}`)
       }
       if (attempt.isError) attempt = await renderRaw(client, { backend })
-      if (attempt.isError && !deviceError.test(attempt.text)) {
-        assert.fail(`webgpu: render failed with a non-device error: ${attempt.text}`)
+      if (attempt.isError && !deviceLoss.test(attempt.text)) {
+        assert.fail(`webgpu: render failed with a non-device-loss error: ${attempt.text}`)
       }
       if (attempt.isError) {
         assert.match(attempt.text, /"status":\s*"error"/)
