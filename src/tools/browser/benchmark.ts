@@ -1,10 +1,14 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { BrowserSession } from '../../harness/browser-session.js'
-import type { BenchmarkResult } from '../../harness/types.js'
+import { BrowserSession, effectSelectionProblem } from '../../harness/browser-session.js'
+import type { EffectSelectionResult, BenchmarkResult } from '../../harness/types.js'
 import { getConfig } from '../../config.js'
 import { resolveEffectIds } from '../resolve-effects.js'
 import { toolResult } from '../tool-result.js'
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
 
 export const benchmarkEffectFPSSchema = {
   effect_id: z.string().optional().describe('One effect ID, such as "synth/noise"'),
@@ -26,25 +30,41 @@ export async function benchmarkEffectFPS(
   return session.runWithConsoleCapture(async () => {
     const page = session.page!
 
-    await session.setBackend(session.backend)
+    // The switch must actually take effect: setBackend rejects when the page
+    // backend never reaches the target (issue #34).
+    try {
+      await session.setBackend(session.backend)
+    } catch (err) {
+      return {
+        status: 'error' as const,
+        backend: 'unknown',
+        achieved_fps: 0,
+        meets_target: false,
+        stats: { frame_count: 0, avg_frame_time_ms: 0, jitter_ms: 0, min_frame_time_ms: 0, max_frame_time_ms: 0 },
+        error: `Backend switch failed: ${errorMessage(err)}`,
+      }
+    }
 
     // Set viewport resolution if specified
     if (options.resolution) {
       await page.setViewportSize({ width: options.resolution[0], height: options.resolution[1] })
     }
 
-    // Select effect
-    await page.evaluate((id) => {
-      const select = document.getElementById('effect-select') as HTMLSelectElement
-      if (select) { select.value = id; select.dispatchEvent(new Event('change')) }
-    }, effectId)
-
-    // Wait for compile
-    await page.waitForFunction(() => {
-      const s = document.getElementById('status')
-      const t = (s?.textContent || '').toLowerCase()
-      return t.includes('loaded') || t.includes('compiled') || t.includes('ready') || t.includes('error')
-    }, { timeout: session.timeoutMs })
+    // Select and wait until the page finished building THIS effect (issue
+    // #34) — status text is not a readiness signal.
+    const selection: EffectSelectionResult = await session.selectEffect(effectId)
+    const problem = effectSelectionProblem(selection, effectId, session.backend)
+    if (problem) {
+      return {
+        status: 'error' as const,
+        backend: selection.backend,
+        achieved_fps: 0,
+        meets_target: false,
+        stats: { frame_count: 0, avg_frame_time_ms: 0, jitter_ms: 0, min_frame_time_ms: 0, max_frame_time_ms: 0 },
+        error: problem,
+        ...(selection.effectId ? { effect_id: selection.effectId } : {}),
+      }
+    }
 
     // Best-effort honor of the requested resolution (same as renderEffectFrame):
     // the viewport alone does not size the render canvas. Prefer the viewer's
@@ -115,12 +135,13 @@ export async function benchmarkEffectFPS(
       return canvas ? { width: canvas.width, height: canvas.height } : null
     }, session.globals)
 
-    const backend = session.backend
     const resolutionMismatch = options.resolution !== undefined && frame !== null
       && (frame.width !== options.resolution[0] || frame.height !== options.resolution[1])
     return {
       status: 'ok' as const,
-      backend,
+      // The backend the page reported, not the requested value (issue #34).
+      backend: selection.backend,
+      ...(selection.effectId ? { effect_id: selection.effectId } : {}),
       ...(options.resolution ? { requested_resolution: options.resolution } : {}),
       ...(frame ? { frame } : {}),
       ...(resolutionMismatch ? {

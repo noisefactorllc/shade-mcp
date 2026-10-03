@@ -24,7 +24,13 @@ function installFakeViewer(globals: ReturnType<typeof globalsFromPrefix>): void 
       },
       getName: () => 'webgl2',
     },
+    // Viewer contract for a bound selection (issue #34): the pipeline holds a
+    // built graph, and the viewer reports which effect it is showing.
+    isCompiling: false,
+    graph: { passes: [{ name: 'main' }], renderSurface: 'frame' },
   }
+  w[globals.currentEffect] = { namespace: 'synth', name: 'noise' }
+  w[globals.pipelineGeneration!] = 0
   w[globals.canvasRenderer] = {
     canvas: { width: 2, height: 2 },
     // Records the pause state, paused time and the time argument of the last

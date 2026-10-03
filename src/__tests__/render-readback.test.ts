@@ -106,7 +106,9 @@ function installWebGpuFakeViewer(globals: ViewerGlobals, options: FakeViewerOpti
     },
     __lastRenderTime: () => lastRenderTime,
   }
-  w[globals.currentEffect] = { instance: { globals: options.uniforms ?? {} } }
+  // The viewer reports which effect it is showing (issue #34 contract).
+  w[globals.currentEffect] = { namespace: 'synth', name: 'noise', instance: { globals: options.uniforms ?? {} } }
+  w[globals.pipelineGeneration!] = 0
   let frames = 0
   Object.defineProperty(w, globals.frameCount, { configurable: true, get: () => frames })
   w[globals.setPaused] = (v: boolean) => { w.__paused = v }

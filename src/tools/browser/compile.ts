@@ -1,10 +1,14 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { BrowserSession } from '../../harness/browser-session.js'
+import { BrowserSession, effectSelectionProblem } from '../../harness/browser-session.js'
 import type { CompileResult } from '../../harness/types.js'
 import { getConfig } from '../../config.js'
 import { resolveEffectIds } from '../resolve-effects.js'
 import { toolResult } from '../tool-result.js'
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
 
 
 export const compileEffectSchema = {
@@ -18,50 +22,38 @@ export async function compileEffect(
   effectId: string,
 ): Promise<CompileResult> {
   return session.runWithConsoleCapture(async () => {
-    const page = session.page!
+    // The switch must actually take effect: setBackend rejects when the page
+    // backend never reaches the target (issue #34).
+    try {
+      await session.setBackend(session.backend)
+    } catch (err) {
+      return { status: 'error' as const, passes: [], message: `Backend switch failed: ${errorMessage(err)}`, backend: 'unknown' }
+    }
 
-    await session.setBackend(session.backend)
+    // Select and wait until the page finished building THIS effect (issue
+    // #34). The old wait matched viewer status text — "loaded/compiled/ready"
+    // — which still describes the previous effect right after a selection, so
+    // the verb could report the previous graph as a fresh ok.
+    const selection = await session.selectEffect(effectId)
+    const problem = effectSelectionProblem(selection, effectId, session.backend)
+    if (problem) {
+      return {
+        status: 'error' as const,
+        passes: selection.passes ?? [],
+        message: problem,
+        backend: selection.backend,
+        ...(selection.effectId ? { effect_id: selection.effectId } : {}),
+      }
+    }
 
-    // Select effect
-    await page.evaluate((id) => {
-      const select = document.getElementById('effect-select') as HTMLSelectElement
-      if (select) { select.value = id; select.dispatchEvent(new Event('change')) }
-    }, effectId)
-
-    // Wait for compile
-    const result = await page.evaluate(({ timeout, globals }) => {
-      return new Promise<any>((resolve) => {
-        const start = Date.now()
-        const poll = () => {
-          const status = document.getElementById('status')
-          const text = (status?.textContent || '').toLowerCase()
-          const pipeline = (window as any)[globals.renderingPipeline]
-
-          if (text.includes('error') || text.includes('failed')) {
-            const passes = pipeline?.graph?.passes?.map((p: any, i: number) => ({
-              id: p.name || `pass_${i}`, status: 'error'
-            })) || []
-            resolve({ status: 'error', passes, message: status?.textContent || 'Compilation failed' })
-            return
-          }
-          if (text.includes('loaded') || text.includes('compiled') || text.includes('ready')) {
-            const passes = pipeline?.graph?.passes?.map((p: any, i: number) => ({
-              id: p.name || `pass_${i}`, status: 'ok'
-            })) || [{ id: 'main', status: 'ok' }]
-            resolve({ status: 'ok', passes, message: 'Compiled successfully' })
-            return
-          }
-          if (Date.now() - start > timeout) {
-            resolve({ status: 'error', passes: [], message: 'Compile timeout' })
-            return
-          }
-          setTimeout(poll, 50)
-        }
-        poll()
-      })
-    }, { timeout: session.timeoutMs, globals: session.globals })
-
-    return { ...result, backend: session.backend }
+    return {
+      status: 'ok' as const,
+      passes: selection.passes ?? [{ id: 'main', status: 'ok' as const }],
+      message: 'Compiled successfully',
+      // The backend the page reported, not the requested value.
+      backend: selection.backend,
+      ...(selection.effectId ? { effect_id: selection.effectId } : {}),
+    }
   })
 }
 

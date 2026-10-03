@@ -8,6 +8,13 @@ export interface ViewerGlobals {
   setPaused: string
   setPausedTime: string
   frameCount: string
+  /**
+   * Optional compile generation counter (`${prefix}PipelineGeneration`, e.g.
+   * `__noisemakerPipelineGeneration`): viewers that publish it bump the number
+   * after every successful compile. Used to bind readiness to a selection —
+   * absent, the selection wait falls back to graph-swap / isCompiling signals.
+   */
+  pipelineGeneration?: string
 }
 
 export const DEFAULT_GLOBALS: ViewerGlobals = {
@@ -18,6 +25,7 @@ export const DEFAULT_GLOBALS: ViewerGlobals = {
   setPaused: '__shadeSetPaused',
   setPausedTime: '__shadeSetPausedTime',
   frameCount: '__shadeFrameCount',
+  pipelineGeneration: '__shadePipelineGeneration',
 }
 
 export function globalsFromPrefix(prefix: string): ViewerGlobals {
@@ -29,6 +37,7 @@ export function globalsFromPrefix(prefix: string): ViewerGlobals {
     setPaused: `${prefix}SetPaused`,
     setPausedTime: `${prefix}SetPausedTime`,
     frameCount: `${prefix}FrameCount`,
+    pipelineGeneration: `${prefix}PipelineGeneration`,
   }
 }
 
@@ -62,12 +71,18 @@ export interface CompileResult {
   passes: Array<{ id: string; status: 'ok' | 'error'; errors?: string[] }>
   message: string
   console_errors?: string[]
+  // Page-confirmed effect id: what the viewer reports as its current effect
+  // after the selection completed. Absent when the viewer does not expose the
+  // current effect's identity (the caller's requested id is shown instead).
+  effect_id?: string
 }
 
 export interface RenderResult {
   status: 'ok' | 'error'
   backend: string
   error?: string
+  // Page-confirmed effect id, when the viewer exposes it (see CompileResult).
+  effect_id?: string
   // Echo of the `resolution` request, present whenever one was made,
   // including error results (the caller must see the request even when
   // rendering fails).
@@ -84,6 +99,8 @@ export interface BenchmarkResult {
   status: 'ok' | 'error'
   backend: string
   achieved_fps: number
+  // Page-confirmed effect id, when the viewer exposes it (see CompileResult).
+  effect_id?: string
   meets_target: boolean
   // Echo of the `resolution` request, present whenever one was made.
   requested_resolution?: [number, number]
@@ -91,6 +108,7 @@ export interface BenchmarkResult {
   warning?: string
   // Frame size the benchmark measured at (the viewer's canvas backing size).
   frame?: { width: number; height: number }
+  error?: string
   stats: {
     frame_count: number
     avg_frame_time_ms: number
@@ -110,6 +128,11 @@ export interface ParityResult {
   resolution: [number, number]
   details: string
   console_errors?: string[]
+  // Page-confirmed effect id of the final (WebGPU) leg, when the viewer
+  // exposes it (see CompileResult).
+  effect_id?: string
+  // Backend reported by the pipeline during the final (WebGPU) leg.
+  backend?: string
   // Solid-color + Y-flip diagnostics (populated by testPixelParity)
   glslSolid?: boolean
   wgslSolid?: boolean
@@ -121,4 +144,28 @@ export interface ParityResult {
   yFlipMeanDiff?: number
   yFlipRatio?: number
   issues?: string[]
+}
+
+/**
+ * Outcome of a bound effect selection (`BrowserSession.selectEffect`): the
+ * wait resolves only when the page finished building the requested effect
+ * after the selection (issue #34) — never on viewer status text alone, which
+ * still describes the previous effect right after a selection.
+ */
+export interface EffectSelectionResult {
+  status: 'ok' | 'error'
+  /** Viewer status text; on 'error' this is the failure message. */
+  message?: string
+  /**
+   * Effect id the page reports as current (from the `currentEffect` viewer
+   * global) once the wait resolved; null when the viewer does not expose it.
+   */
+  effectId: string | null
+  /** Backend reported by `pipeline.backend.getName()`, or 'unknown'. */
+  backend: string
+  /**
+   * Passes of the graph that finished building; error entries when the
+   * viewer reported a compile failure; null when no graph was readable.
+   */
+  passes: Array<{ id: string; status: 'ok' | 'error' }> | null
 }

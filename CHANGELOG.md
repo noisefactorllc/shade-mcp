@@ -7,6 +7,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- **Browser verb results are bound to the requested effect and backend.**
+  `compileEffect`, `renderEffectFrame`, `benchmarkEffectFPS`,
+  `testUniformResponsiveness`, `testNoPassthrough` and `testPixelParity`
+  used to wait on the viewer's status text, which still describes the
+  previous effect right after a selection — so an `ok` result could report
+  the previous graph, and `setBackend()` returned silently when the page
+  backend never reached the target. Selections now wait for a bound
+  readiness signal inside the page (a pipeline rebuilt after the selection —
+  graph swap, compile generation, or an `isCompiling` round-trip — or the
+  `currentEffect` global confirming the requested id), `setBackend()`
+  rejects on timeout, and every result reports the page-confirmed effect id
+  (`effect_id`) and the actual backend (`pipeline.backend.getName()`).
+  A disagreement with the request is a `status: 'error'` result.
+
 - **`testNoPassthrough` now compares the rendered output with the input
   texture the effect consumes, at one fixed paused time.** Filter
   classification uses the pass input key (a pipeline input name such as

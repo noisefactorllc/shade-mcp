@@ -2,7 +2,7 @@ import { chromium, type Browser, type BrowserContext, type Page, type ConsoleMes
 import { dirname, join, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 import type { Backend } from '../config.js'
-import type { BrowserSessionOptions, CompileResult, RenderResult, BenchmarkResult, ImageMetrics, ViewerGlobals } from './types.js'
+import type { BrowserSessionOptions, CompileResult, RenderResult, BenchmarkResult, ImageMetrics, ViewerGlobals, EffectSelectionResult } from './types.js'
 import { DEFAULT_GLOBALS, globalsFromPrefix } from './types.js'
 import { acquireServer, releaseServer, getServerUrl } from './server-manager.js'
 import { acquireBrowserSlot, releaseBrowserSlot } from './browser-queue.js'
@@ -68,6 +68,183 @@ export function swiftshaderVulkanEnv(): Record<string, string> {
   } catch {
     return {}
   }
+}
+
+// ---------------------------------------------------------------------------
+// In-page selection helpers. These run serialized inside the page (or against
+// fake viewers in tests), so each must be self-contained: no closure
+// references to module scope. They implement the bound selection contract of
+// issue #34: a wait that resolves only when the page finished building the
+// requested effect AFTER this selection — never on viewer status text alone,
+// which still describes the previous effect right after a selection.
+// ---------------------------------------------------------------------------
+
+/**
+ * In-page bound selection (issue #34): captures the viewer's pre-selection
+ * state, dispatches the change event, then polls until the viewer finished
+ * building the requested effect AFTER this selection — or reports a viewer
+ * failure bound to it. Resolves with the page-confirmed identity either way;
+ * never throws — the caller maps timeouts to errors.
+ *
+ * Runs serialized inside the page (or against fake viewers in tests), so it
+ * must be self-contained: no closure references to module scope. The
+ * pre-selection state MUST be captured here, inside the page: a snapshot
+ * passed in from Node arrives deserialized, and its graph object identity —
+ * the primary rebuild signal — would not survive the boundary.
+ */
+function selectAndAwaitEffect({ effectId, globals, timeout }: {
+  effectId: string
+  globals: ViewerGlobals
+  timeout: number
+}): Promise<EffectSelectionResult> {
+  return new Promise<EffectSelectionResult>((resolve) => {
+    const w = window as any
+    const readId = (): string | null => {
+      const e = w[globals.currentEffect]
+      if (!e) return null
+      if (typeof e === 'string') return e
+      // Effect entries carry the identity (noisemaker: namespace + name);
+      // some viewers expose it as id/effectId. A bare `name` is NOT an id —
+      // with a namespace it would be ambiguous — so it is not matched.
+      const ns = typeof e.namespace === 'string' ? e.namespace
+        : e.instance && typeof e.instance.namespace === 'string' ? e.instance.namespace : null
+      const nm = typeof e.name === 'string' ? e.name
+        : e.instance && typeof e.instance.name === 'string' ? e.instance.name : null
+      if (ns && nm) return `${ns}/${nm}`
+      if (typeof e.id === 'string') return e.id
+      if (typeof e.effectId === 'string') return e.effectId
+      return null
+    }
+    const genName = globals.pipelineGeneration
+
+    const p0 = w[globals.renderingPipeline]
+    const before = {
+      effectId: readId(),
+      ready: !!(p0 && !p0.isCompiling && p0.graph?.passes && p0.graph.passes.length > 0),
+      graph: p0 ? (p0.graph ?? null) : null,
+      generation: typeof genName === 'string' && typeof w[genName] === 'number' ? w[genName] : null,
+      statusText: document.getElementById('status')?.textContent || '',
+    }
+
+    const select = document.getElementById('effect-select') as HTMLSelectElement | null
+    if (select) {
+      select.value = effectId
+      select.dispatchEvent(new Event('change'))
+    }
+
+    const start = Date.now()
+    let sawCompiling = false
+    const poll = () => {
+      const p = w[globals.renderingPipeline]
+      const backendName: string = p?.backend?.getName?.() || 'unknown'
+      const idNow = readId()
+      const graph = p ? (p.graph ?? null) : null
+      const passes = p?.graph?.passes
+      const generation = typeof genName === 'string' && typeof w[genName] === 'number' ? w[genName] : null
+      const statusText: string = document.getElementById('status')?.textContent || ''
+
+      if (Date.now() - start > timeout) {
+        resolve({
+          status: 'error',
+          message: `Timed out after ${timeout} ms waiting for the viewer to finish building ${effectId}`
+            + (idNow && idNow !== effectId ? ` (the viewer is still showing ${idNow})` : ''),
+          effectId: idNow ?? null,
+          backend: backendName,
+          passes: null,
+        })
+        return
+      }
+
+      if (!p) { setTimeout(poll, 50); return }
+
+      if (p.isCompiling) { sawCompiling = true; setTimeout(poll, 50); return }
+
+      const ready = !!(passes && passes.length > 0)
+      // Did the pipeline rebuild after this selection? A graph swap, a bumped
+      // compile generation, or an observed isCompiling round-trip all prove a
+      // graph built after the selection is in front of us.
+      const rebuilt = graph !== before.graph
+        || (before.generation !== null && generation !== null && generation !== before.generation)
+      const idMatches = idNow !== null && idNow === effectId
+      const statusChanged = statusText !== before.statusText
+      const failing = /error|failed/.test(statusText.toLowerCase())
+      // Viewers that expose NO rebuild signal at all (no compile generation,
+      // no isCompiling flag) cannot prove a rebuild happened; for those, a
+      // page-confirmed effect id on a ready graph is the strongest available
+      // binding. Viewers that do expose a signal (noisemaker does both) must
+      // always wait for it.
+      const hasRebuildSignal = generation !== null || ('isCompiling' in p)
+
+      // Compile failure. Two guards against the PREVIOUS effect's failure
+      // text: the failure must be bound to this selection (identity or a
+      // rebuild observed) and must be fresh (the text changed, or the
+      // pipeline rebuilt since the selection).
+      if (failing && (idMatches || rebuilt || sawCompiling) && (statusChanged || rebuilt || sawCompiling)) {
+        resolve({
+          status: 'error',
+          message: statusText || 'Compilation failed',
+          effectId: idNow ?? null,
+          backend: backendName,
+          passes: (passes || []).map((pass: any, i: number) => ({ id: pass.name || `pass_${i}`, status: 'error' as const })),
+        })
+        return
+      }
+
+      // Ready: a graph built after this selection, when the viewer already
+      // showed this exact effect, fully built, before the selection and
+      // nothing changed since, or when the viewer offers no rebuild signal
+      // and confirms the requested id.
+      if (ready && (rebuilt || sawCompiling
+        || (before.effectId === effectId && before.ready && !statusChanged)
+        || (!hasRebuildSignal && idMatches))) {
+        resolve({
+          status: 'ok',
+          effectId: idNow ?? null,
+          backend: backendName,
+          passes: passes.map((pass: any, i: number) => ({ id: pass.name || `pass_${i}`, status: 'ok' as const })),
+        })
+        return
+      }
+
+      setTimeout(poll, 50)
+    }
+    poll()
+  })
+}
+
+/**
+ * Whether a page-reported backend name is the requested backend. Names come
+ * in two conventions: `pipeline.backend.getName()` ('WebGL2'/'WebGPU' in
+ * noisemaker) and the `currentBackend` viewer global ('glsl'/'wgsl').
+ */
+export function backendNameMatches(actual: string | null | undefined, requested: Backend): boolean {
+  if (!actual) return false
+  const name = actual.toLowerCase()
+  return requested === 'webgpu'
+    ? name === 'webgpu' || name === 'wgsl'
+    : name === 'webgl2' || name === 'webgl' || name === 'glsl'
+}
+
+/**
+ * Returns a human-readable problem when a selection outcome does not match
+ * the request — selection failure, wrong effect, wrong backend — or null
+ * when the page confirmed the requested effect on the requested backend.
+ * The verbs surface this as a `status: 'error'` result instead of silently
+ * measuring whatever the page happens to hold (issue #34).
+ */
+export function effectSelectionProblem(
+  selection: EffectSelectionResult,
+  effectId: string,
+  requestedBackend: Backend,
+): string | null {
+  if (selection.status === 'error') return selection.message || `Failed to select ${effectId}`
+  if (selection.effectId !== null && selection.effectId !== effectId) {
+    return `The viewer is showing ${selection.effectId}, not the requested ${effectId}`
+  }
+  if (!backendNameMatches(selection.backend, requestedBackend)) {
+    return `The viewer is rendering on ${selection.backend}, not the requested ${requestedBackend}`
+  }
+  return null
 }
 
 export class BrowserSession {
@@ -230,16 +407,22 @@ export class BrowserSession {
     this._isSetup = false
   }
 
+  /**
+   * Puts the viewer on the requested backend and verifies the switch took
+   * effect: rejects when the page backend never reaches the target within
+   * `timeoutMs` (issue #34) instead of returning silently while every verb
+   * keeps measuring on the previous backend.
+   */
   async setBackend(backend: Backend): Promise<void> {
     const targetBackend = backend === 'webgpu' ? 'wgsl' : 'glsl'
 
-    await this.page!.evaluate(async ({ targetBackend, timeout, globals }) => {
+    const final = await this.page!.evaluate(async ({ targetBackend, timeout, globals }) => {
       const w = window as any
-      const current = typeof w[globals.currentBackend] === 'function'
+      const readBackend = () => typeof w[globals.currentBackend] === 'function'
         ? w[globals.currentBackend]()
         : 'glsl'
 
-      if (current === targetBackend) return
+      if (readBackend() === targetBackend) return { reached: true, backend: targetBackend }
 
       // Try renderer.switchBackend first (noisemaker demo + Shade app expose this).
       const renderer = w[globals.canvasRenderer]
@@ -259,11 +442,18 @@ export class BrowserSession {
 
       const start = Date.now()
       while (Date.now() - start < timeout) {
-        const nowBackend = typeof w[globals.currentBackend] === 'function' ? w[globals.currentBackend]() : 'glsl'
-        if (nowBackend === targetBackend) break
+        if (readBackend() === targetBackend) return { reached: true, backend: targetBackend }
         await new Promise(r => setTimeout(r, 50))
       }
-    }, { targetBackend, timeout: this.timeoutMs, globals: this.globals })
+      return { reached: false, backend: readBackend() }
+    }, { targetBackend, timeout: this.timeoutMs, globals: this.globals }) as { reached: boolean; backend: string }
+
+    if (!final.reached) {
+      throw new Error(
+        `Backend switch to ${backend} did not take effect within ${this.timeoutMs} ms` +
+        ` (the viewer is still on ${final.backend})`
+      )
+    }
   }
 
   clearConsoleMessages(): void {
@@ -287,14 +477,32 @@ export class BrowserSession {
     return this.options.backend
   }
 
-  async selectEffect(effectId: string): Promise<void> {
-    await this.page!.evaluate((id) => {
-      const select = document.getElementById('effect-select') as HTMLSelectElement | null
-      if (select) {
-        select.value = id
-        select.dispatchEvent(new Event('change'))
+  /**
+   * Selects an effect in the viewer and waits until the page actually built
+   * it (issue #34): the wait resolves only when the viewer's current effect
+   * is the requested id — or the pipeline provably rebuilt after this
+   * selection — and the graph finished compiling. Status text is NOT a
+   * readiness signal: right after a selection it still describes the
+   * previous effect, which is how verbs ended up measuring the old graph.
+   *
+   * Returns the page-confirmed outcome: status 'error' when the wait timed
+   * out, the viewer reported a compile failure bound to this selection, or
+   * the page ended up showing a different effect than the one requested.
+   */
+  async selectEffect(effectId: string): Promise<EffectSelectionResult> {
+    const page = this.page!
+    const outcome = await page.evaluate(selectAndAwaitEffect, {
+      effectId, globals: this.globals, timeout: this.timeoutMs,
+    }) as EffectSelectionResult
+
+    if (outcome.status === 'ok' && outcome.effectId !== null && outcome.effectId !== effectId) {
+      return {
+        ...outcome,
+        status: 'error',
+        message: `The viewer is showing ${outcome.effectId}, not the requested ${effectId}`,
       }
-    }, effectId)
+    }
+    return outcome
   }
 
   async getEffectGlobals(): Promise<Record<string, any>> {

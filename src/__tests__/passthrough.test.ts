@@ -44,6 +44,9 @@ function variedFloats(shift = 0): Float32Array {
 interface FakeTex { width: number; height: number; data: Uint8Array | Float32Array }
 
 interface FakeViewerOptions {
+  // Effect id the viewer reports as current (issue #34 contract); tests pass
+  // the id the verb requests.
+  effectId?: string
   passes: any[]
   textures: Record<string, FakeTex>
   renderSurface?: string
@@ -78,7 +81,12 @@ function installFakeViewer(globals: ViewerGlobals, options: FakeViewerOptions): 
     graph: { passes: options.passes, renderSurface: surface },
     ...(options.frameReadTextures ? { frameReadTextures: new Map(options.frameReadTextures) } : {}),
   }
-  w[globals.currentEffect] = { name: 'fake-effect' }
+  // The viewer reports which effect it is showing (issue #34 contract): the
+  // namespace/name entry the verb's requested id maps to.
+  const requested = options.effectId ?? 'filter/fake'
+  const [namespace, name] = [requested.slice(0, requested.indexOf('/')), requested.slice(requested.indexOf('/') + 1)]
+  w[globals.currentEffect] = { namespace, name }
+  w[globals.pipelineGeneration!] = 0
   w[globals.canvasRenderer] = {
     canvas: { width: W, height: H },
     render: (t: number) => {
@@ -124,6 +132,7 @@ describe('testNoPassthrough (issue #31)', () => {
   it('reports a static copy of a varied input as passthrough, with the measured output-to-input difference', async () => {
     const input: FakeTex = { width: W, height: H, data: variedBytes() }
     installFakeViewer(DEFAULT_GLOBALS, {
+      effectId: 'filter/copy',
       passes: [{ inputs: { inputTex: 'inputTex' } }],
       textures: { inputTex: input, global_frame_read: { width: W, height: H, data: new Uint8Array(input.data) } },
     })
@@ -149,6 +158,7 @@ describe('testNoPassthrough (issue #31)', () => {
   it('reports a filter whose output differs from its input beyond the threshold as ok, with the measured difference', async () => {
     const input: FakeTex = { width: W, height: H, data: variedBytes() }
     installFakeViewer(DEFAULT_GLOBALS, {
+      effectId: 'filter/modifying',
       passes: [{ inputs: { inputTex: 'inputTex' } }],
       textures: { inputTex: input, global_frame_read: { width: W, height: H, data: variedBytes(40) } },
     })
@@ -164,6 +174,7 @@ describe('testNoPassthrough (issue #31)', () => {
   it('classifies a compiled-graph binding of inputTex to node_0_out as a filter, not skipped', async () => {
     const input: FakeTex = { width: W, height: H, data: variedBytes() }
     installFakeViewer(DEFAULT_GLOBALS, {
+      effectId: 'filter/compiled',
       passes: [{ inputs: { inputTex: 'node_0_out' } }],
       textures: { node_0_out: input, global_frame_read: { width: W, height: H, data: new Uint8Array(input.data) } },
     })
@@ -177,6 +188,7 @@ describe('testNoPassthrough (issue #31)', () => {
 
   it('does not classify a generator whose bound texture id contains "input" as a filter', async () => {
     installFakeViewer(DEFAULT_GLOBALS, {
+      effectId: 'synth/generator',
       passes: [{ inputs: { noiseTex: 'global_inputTex_noise' } }],
       textures: {
         global_inputTex_noise: { width: W, height: H, data: variedBytes() },
@@ -192,6 +204,7 @@ describe('testNoPassthrough (issue #31)', () => {
 
   it('measures on a WebGPU-shaped backend (no gl, async readPixels), not "No GL context"', async () => {
     installFakeViewer(DEFAULT_GLOBALS, {
+      effectId: 'filter/webgpu',
       webgpu: true,
       passes: [{ inputs: { inputTex: 'inputTex' } }],
       textures: {
@@ -213,6 +226,7 @@ describe('testNoPassthrough (issue #31)', () => {
   it('reads the output through the fresh read half named by frameReadTextures, not a stale ping-pong half', async () => {
     const input: FakeTex = { width: W, height: H, data: variedBytes() }
     installFakeViewer(DEFAULT_GLOBALS, {
+      effectId: 'filter/pingpong',
       passes: [{ inputs: { inputTex: 'inputTex' } }],
       textures: {
         inputTex: input,

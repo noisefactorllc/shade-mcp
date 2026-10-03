@@ -1,31 +1,20 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { BrowserSession } from '../../harness/browser-session.js'
-import type { ParityResult } from '../../harness/types.js'
+import { BrowserSession, effectSelectionProblem } from '../../harness/browser-session.js'
+import type { EffectSelectionResult, ParityResult } from '../../harness/types.js'
 import { getConfig } from '../../config.js'
 import { resolveEffectIds } from '../resolve-effects.js'
 import { toolResult } from '../tool-result.js'
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
 
 export const testPixelParitySchema = {
   effect_id: z.string().optional().describe('One effect ID, such as "synth/noise"'),
   effects: z.string().optional().describe('Comma-separated effect IDs'),
   epsilon: z.number().optional().default(1).describe('Allowed per-channel difference (0-255)'),
   seed: z.number().optional().default(42).describe('Random seed for reproducible noise'),
-}
-
-// Wait until the freshly selected effect has finished compiling. The status
-// text ("compiled <name>") is NOT a reliable signal: it still shows the
-// PREVIOUS effect after a new selection, so matching it returns instantly and
-// the capture races an in-flight recompile (rebuildPipeline awaits
-// loadEffectsOnDemand before compile). pipeline.isCompiling is the real signal —
-// set true before recompile, cleared by compilePrograms when programs are ready.
-async function waitReady(session: BrowserSession): Promise<void> {
-  await session.page!.waitForFunction((globals: any) => {
-    const w = window as any
-    const p = w[globals.renderingPipeline]
-    if (!p || p.isCompiling) return false
-    return !!(p.graph && p.graph.passes && p.graph.passes.length > 0)
-  }, session.globals, { timeout: session.timeoutMs, polling: 50 })
 }
 
 // Let the live render loop draw real frames so the backend/effect is fully warm
@@ -121,23 +110,50 @@ export async function testPixelParity(
   const epsilon = options.epsilon ?? 1
   const seed = options.seed ?? 42
 
+  // Each leg must confirm the request on the page (issue #34): the backend
+  // switch actually takes effect, and the selection completes only when the
+  // page finished building this effect after it was selected.
+  const parityError = (leg: string, problem: string, backend: string, effectId2: string | null, resolution: [number, number]): ParityResult => ({
+    status: 'error',
+    maxDiff: 0,
+    meanDiff: 0,
+    mismatchCount: 0,
+    mismatchPercent: 0,
+    resolution,
+    details: `${leg}: ${problem}`,
+    ...(effectId2 ? { effect_id: effectId2 } : {}),
+    ...(backend !== 'unknown' ? { backend } : {}),
+  })
+  const legProblem = (selection: EffectSelectionResult, requestedBackend: 'webgl2' | 'webgpu'): string | null =>
+    effectSelectionProblem(selection, effectId, requestedBackend)
+
   // Capture with WebGL2
-  await session.setBackend('webgl2')
-  await session.selectEffect(effectId)
-  await waitReady(session)
+  try {
+    await session.setBackend('webgl2')
+  } catch (err) {
+    return parityError('WebGL2 leg', `Backend switch failed: ${errorMessage(err)}`, 'unknown', null, [0, 0])
+  }
+  let leg: EffectSelectionResult = await session.selectEffect(effectId)
+  let problem = legProblem(leg, 'webgl2')
+  if (problem) return parityError('WebGL2 leg', problem, leg.backend, leg.effectId, [0, 0])
   await warmUp(session)
   const glslPixels = await captureSurface(session, seed)
 
   if (!glslPixels) {
-    return { status: 'error', maxDiff: 0, meanDiff: 0, mismatchCount: 0, mismatchPercent: 0, resolution: [0, 0], details: 'Failed to capture WebGL2' }
+    return parityError('WebGL2 leg', 'Failed to capture WebGL2', leg.backend, leg.effectId, [0, 0])
   }
 
   // Switch to WebGPU and capture. Re-select the effect after the backend switch
   // so uniforms re-initialize from effect defaults under the new backend;
   // otherwise WebGL2-side state leaks and we compare drifted uniforms.
-  await session.setBackend('webgpu')
-  await session.selectEffect(effectId)
-  await waitReady(session)
+  try {
+    await session.setBackend('webgpu')
+  } catch (err) {
+    return parityError('WebGPU leg', `Backend switch failed: ${errorMessage(err)}`, 'unknown', leg.effectId, [glslPixels.width, glslPixels.height])
+  }
+  leg = await session.selectEffect(effectId)
+  problem = legProblem(leg, 'webgpu')
+  if (problem) return parityError('WebGPU leg', problem, leg.backend, leg.effectId, [glslPixels.width, glslPixels.height])
   await warmUp(session)
   const wgslPixels = await captureSurface(session, seed)
 
@@ -148,7 +164,7 @@ export async function testPixelParity(
   }, session.globals)
 
   if (!wgslPixels) {
-    return { status: 'error', maxDiff: 0, meanDiff: 0, mismatchCount: 0, mismatchPercent: 0, resolution: [glslPixels.width, glslPixels.height], details: 'Failed to capture WebGPU' }
+    return parityError('WebGPU leg', 'Failed to capture WebGPU', leg.backend, leg.effectId, [glslPixels.width, glslPixels.height])
   }
 
   // Guard against comparing mismatched capture dimensions (would corrupt the
@@ -251,6 +267,9 @@ export async function testPixelParity(
     mismatchCount,
     mismatchPercent: Math.round(mismatchPercent * 100) / 100,
     resolution: [w, h],
+    // Page-confirmed identity of the final (WebGPU) leg (issue #34).
+    ...(leg.effectId ? { effect_id: leg.effectId } : {}),
+    ...(leg.backend !== 'unknown' ? { backend: leg.backend } : {}),
     glslSolid: glslSolid.isSolid,
     wgslSolid: wgslSolid.isSolid,
     glslVariance: glslSolid.variance,

@@ -42,18 +42,22 @@ function installFakeViewer(globals: ViewerGlobals, specs: Record<string, any>): 
       },
       getName: () => 'webgl2',
     },
+    // Viewer contract for a bound selection (issue #34): a built graph and
+    // the id of the effect the viewer is showing.
+    isCompiling: false,
+    graph: { passes: [{ name: 'main' }], renderSurface: 'frame' },
     setUniform: (name: string, val: number) => {
       w.__values[name] = val
     },
   }
+  w[globals.currentEffect] = { namespace: 'synth', name: 'noise', instance: { globals: specs } }
+  w[globals.pipelineGeneration!] = 0
   w[globals.canvasRenderer] = {
     canvas: { width: 2, height: 2 },
     render: () => {
       if ('u_boom' in w.__values && w.__values.u_boom !== 0.5) throw new Error('render exploded')
     },
   }
-  w[globals.currentEffect] = { instance: { globals: specs } }
-
   ;(globalThis as any).window = w
   ;(globalThis as any).document = {
     getElementById: () => null,

@@ -37,7 +37,13 @@ function installFakeViewer(globals: ViewerGlobals, options: FakeViewerOptions): 
       },
       getName: () => 'webgl2',
     },
+    // Viewer contract for a bound selection (issue #34): a built graph and
+    // the id of the effect the viewer is showing.
+    isCompiling: false,
+    graph: { passes: [{ name: 'main' }], renderSurface: 'frame' },
   }
+  w[globals.currentEffect] = { namespace: 'synth', name: 'noise' }
+  w[globals.pipelineGeneration!] = 0
   const canvas: any = options.fixed
     ? Object.freeze({ width: options.canvasWidth, height: options.canvasHeight })
     : { width: options.canvasWidth, height: options.canvasHeight }
@@ -166,15 +172,17 @@ describe('renderEffectFrame resolution honoring (issue #33)', () => {
     expect(result.requested_resolution).toBeUndefined()
   })
 
-  it('echoes the requested resolution when no pipeline is installed', async () => {
+  it('echoes the requested resolution when the bound selection cannot confirm the effect', async () => {
     installFakeViewer(DEFAULT_GLOBALS, { canvasWidth: 90, canvasHeight: 90, fixed: true })
     const { session } = makeSession()
+    // No pipeline: the bound selection can never confirm the effect, so the
+    // verb errors at selection (issue #34) — still echoing the resolution.
     delete ((globalThis as any).window as any)[DEFAULT_GLOBALS.renderingPipeline]
 
     const result = await renderEffectFrame(session, 'synth/noise', { warmupFrames: 2, resolution: [256, 256] })
 
     expect(result.status).toBe('error')
-    expect(result.error).toContain('No renderer')
+    expect(result.error).toContain('Timed out')
     expect(result.requested_resolution).toEqual([256, 256])
   })
 
@@ -193,13 +201,19 @@ describe('renderEffectFrame resolution honoring (issue #33)', () => {
   it('echoes the requested resolution when no readable surface exists', async () => {
     const w: any = installFakeViewer(DEFAULT_GLOBALS, { canvasWidth: 90, canvasHeight: 90, fixed: true })
     const { session } = makeSession()
-    // WebGPU-shaped backend without an async reader: nothing can deliver pixels.
-    w[DEFAULT_GLOBALS.renderingPipeline] = { backend: { getName: () => 'webgpu' } }
+    // Backend that matches the request but has neither a GL context nor an
+    // async reader: nothing can deliver pixels. (The bound selection still
+    // succeeds — the graph is ready and the backend matches the request.)
+    w[DEFAULT_GLOBALS.renderingPipeline] = {
+      backend: { getName: () => 'webgl2' },
+      isCompiling: false,
+      graph: { passes: [{ name: 'main' }], renderSurface: 'frame' },
+    }
 
     const result = await renderEffectFrame(session, 'synth/noise', { warmupFrames: 2, resolution: [256, 256] })
 
     expect(result.status).toBe('error')
-    expect(result.error).toContain('Failed to read pixels on webgpu')
+    expect(result.error).toContain('Failed to read pixels on webgl2')
     expect(result.requested_resolution).toEqual([256, 256])
   })
 })

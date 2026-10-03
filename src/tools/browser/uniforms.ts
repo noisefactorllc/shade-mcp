@@ -1,9 +1,14 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { BrowserSession } from '../../harness/browser-session.js'
+import { BrowserSession, effectSelectionProblem } from '../../harness/browser-session.js'
+import type { EffectSelectionResult } from '../../harness/types.js'
 import { getConfig } from '../../config.js'
 import { resolveEffectIds } from '../resolve-effects.js'
 import { toolResult } from '../tool-result.js'
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
 
 export const testUniformResponsivenessSchema = {
   effect_id: z.string().optional().describe('One effect ID, such as "synth/noise"'),
@@ -20,19 +25,28 @@ export async function testUniformResponsiveness(
   return session.runWithConsoleCapture(async () => {
     const page = session.page!
 
-    await session.setBackend(session.backend)
+    // The switch must actually take effect: setBackend rejects when the page
+    // backend never reaches the target (issue #34).
+    try {
+      await session.setBackend(session.backend)
+    } catch (err) {
+      return { status: 'error', tested_uniforms: [], uniforms: [], backend: 'unknown', details: `Backend switch failed: ${errorMessage(err)}` }
+    }
 
-    // Select effect
-    await page.evaluate((id) => {
-      const select = document.getElementById('effect-select') as HTMLSelectElement
-      if (select) { select.value = id; select.dispatchEvent(new Event('change')) }
-    }, effectId)
-
-    await page.waitForFunction(() => {
-      const s = document.getElementById('status')
-      const t = (s?.textContent || '').toLowerCase()
-      return t.includes('loaded') || t.includes('compiled') || t.includes('ready')
-    }, { timeout: session.timeoutMs })
+    // Select and wait until the page finished building THIS effect (issue
+    // #34) — status text is not a readiness signal.
+    const selection: EffectSelectionResult = await session.selectEffect(effectId)
+    const problem = effectSelectionProblem(selection, effectId, session.backend)
+    if (problem) {
+      return {
+        status: 'error',
+        tested_uniforms: [],
+        uniforms: [],
+        backend: selection.backend,
+        details: problem,
+        ...(selection.effectId ? { effect_id: selection.effectId } : {}),
+      }
+    }
 
     // Pause animation for deterministic testing
     await page.evaluate((globals) => {
@@ -221,7 +235,13 @@ export async function testUniformResponsiveness(
       if (w[globals.setPaused]) w[globals.setPaused](false)
     }, session.globals)
 
-    return result
+    // Report the page-confirmed identity (issue #34): the backend the page
+    // actually rendered on, and the effect id the page confirms.
+    return {
+      ...result,
+      backend: selection.backend,
+      ...(selection.effectId ? { effect_id: selection.effectId } : {}),
+    }
   })
 }
 

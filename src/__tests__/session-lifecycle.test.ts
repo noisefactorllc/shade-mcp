@@ -13,6 +13,7 @@ vi.mock('playwright', () => ({
 
 import { chromium } from 'playwright'
 import { BrowserSession } from '../harness/browser-session.js'
+import { DEFAULT_GLOBALS } from '../harness/types.js'
 import { getRefCount, releaseServer } from '../harness/server-manager.js'
 import {
   acquireBrowserSlot,
@@ -161,5 +162,69 @@ describe('browser session lifecycle', () => {
 
     expect(getActiveBrowsers()).toBe(1)
     releaseBrowserSlot()
+  })
+})
+
+describe('setBackend (issue #34)', () => {
+  let originalWindow: any
+  let originalDocument: any
+
+  beforeEach(() => {
+    originalWindow = (globalThis as any).window
+    originalDocument = (globalThis as any).document
+  })
+
+  afterEach(() => {
+    ;(globalThis as any).window = originalWindow
+    ;(globalThis as any).document = originalDocument
+  })
+
+  // A session whose page runs evaluate payloads against a fake viewer.
+  function fakePageSession(w: any): BrowserSession {
+    ;(globalThis as any).window = w
+    ;(globalThis as any).document = { querySelector: () => null }
+    const session = new BrowserSession({
+      backend: 'webgl2',
+      timeoutMs: 200,
+      viewerPort: 0,
+      viewerRoot: tmpDir,
+      effectsDir: tmpEffects,
+      globals: DEFAULT_GLOBALS,
+    })
+    session.page = {
+      evaluate: async (fn: (arg: any) => any, arg: any) => fn(arg),
+    } as any
+    return session
+  }
+
+  it('rejects when the fake page\'s current backend never reaches the target within timeoutMs', async () => {
+    // No switchBackend, no backend controls: the page backend stays 'glsl'.
+    const w: any = {}
+    w[DEFAULT_GLOBALS.currentBackend] = () => 'glsl'
+    const session = fakePageSession(w)
+
+    await expect(session.setBackend('webgpu'))
+      .rejects.toThrow(/Backend switch to webgpu did not take effect within 200 ms/)
+    // ...and the page backend is still what it was.
+    expect(w[DEFAULT_GLOBALS.currentBackend]()).toBe('glsl')
+  })
+
+  it('resolves when the viewer reaches the target backend through switchBackend', async () => {
+    const w: any = {}
+    w.__kind = 'glsl'
+    w[DEFAULT_GLOBALS.currentBackend] = () => w.__kind
+    w[DEFAULT_GLOBALS.canvasRenderer] = { switchBackend: async (b: string) => { w.__kind = b } }
+    const session = fakePageSession(w)
+
+    await expect(session.setBackend('webgpu')).resolves.toBeUndefined()
+    expect(w[DEFAULT_GLOBALS.currentBackend]()).toBe('wgsl')
+  })
+
+  it('resolves immediately when the viewer is already on the target backend', async () => {
+    const w: any = {}
+    w[DEFAULT_GLOBALS.currentBackend] = () => 'glsl'
+    const session = fakePageSession(w)
+
+    await expect(session.setBackend('webgl2')).resolves.toBeUndefined()
   })
 })
