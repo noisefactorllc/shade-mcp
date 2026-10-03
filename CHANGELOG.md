@@ -3,6 +3,23 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **`testNoPassthrough` now compares the rendered output with the input
+  texture the effect consumes, at one fixed paused time.** Filter
+  classification uses the pass input key (a pipeline input name such as
+  `inputTex`) or a value naming a pipeline input — never a substring of the
+  bound texture id, which reported every compiled graph as "not a filter
+  effect" and misclassified generators whose texture ids contain "input".
+  The verdict no longer depends on animation or unique-color count:
+  `passthrough` means the output matches the input within the reported
+  threshold (`0.01` mean per-channel difference), and the result carries the
+  measured difference (`similarity`) and the consumed `inputTexture`. The
+  capture reads through the backend's `readPixels` on both WebGL2 and
+  WebGPU. The result no longer includes `temporalDiff` or `uniqueColors`.
+
 ## [0.3.1] — 2026-10-02
 
 ### Changed

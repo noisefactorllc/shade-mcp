@@ -56,7 +56,7 @@ function installWebGpuFakeViewer(globals: ViewerGlobals, options: FakeViewerOpti
       const c = Math.round(values.u_amount * 255)
       rest = [c, 0, c]
     } else if (options.filterEffect) {
-      // Time-varying fake shader so the passthrough probe sees a temporal diff.
+      // Time-varying fake shader so the frame probes see redraws take effect.
       rest = lastRenderTime > 0.5 ? [200, 100, 50] : [10, 0, 0]
     } else {
       rest = [200, 100, 50]
@@ -67,11 +67,18 @@ function installWebGpuFakeViewer(globals: ViewerGlobals, options: FakeViewerOpti
 
   // Models real WebGPU readback lag: each draw produces a new frame, but the
   // async reader only serves frames the queue has drained. A read issued
-  // before onSubmittedWorkDone gets the PREVIOUS frame's bytes.
+  // before onSubmittedWorkDone gets the PREVIOUS frame's bytes. The filter
+  // fake binds its pipeline input (inputTex) to node_0_out, which the reader
+  // serves as a static buffer distinct from the rendered surface, so the
+  // passthrough probe has a real output-to-input difference to measure.
+  const filterInputBytes = fakeSurfaceData(true, [0, 0, 0], [3, 3, 3])
   let rendered = computeBytes()
   let served = rendered
 
-  const readPixels = async (_id: string) => {
+  const readPixels = async (id: string) => {
+    if (options.filterEffect && id === 'node_0_out') {
+      return { data: filterInputBytes, width: WIDTH, height: HEIGHT }
+    }
     return served ? { data: served, width: WIDTH, height: HEIGHT } : null
   }
 
@@ -84,7 +91,7 @@ function installWebGpuFakeViewer(globals: ViewerGlobals, options: FakeViewerOpti
     },
     graph: {
       renderSurface: 'frame',
-      passes: options.filterEffect ? [{ inputs: { tex: 'input' } }] : [{ inputs: {} }],
+      passes: options.filterEffect ? [{ inputs: { inputTex: 'node_0_out' } }] : [{ inputs: {} }],
     },
     setUniform: (name: string, val: number) => { values[name] = val },
     globalUniforms: values,
@@ -252,17 +259,19 @@ describe('backend-neutral frame readback (issue #28)', () => {
   })
 
   describe('testNoPassthrough on a WebGPU backend', () => {
-    it('measures the temporal difference through the backend readback', async () => {
+    it('measures the output-to-input difference through the backend readback', async () => {
       installWebGpuFakeViewer(DEFAULT_GLOBALS, { filterEffect: true })
       const session = makeSession('webgpu')
       const result = await testNoPassthrough(session, 'synth/noise')
 
       expect(result.status).toBe('ok')
       expect(result.isFilterEffect).toBe(true)
-      expect(result.temporalDiff).not.toBeNull()
-      // Frame 1 must be the freshly drawn frame at t=1.0, not a stale repeat
-      // of the t=0 readback.
-      expect(result.temporalDiff).toBeGreaterThan(0)
+      expect(result.similarity).not.toBeNull()
+      // The measured difference is between the rendered surface and the
+      // consumed input texture (node_0_out), both read through the backend
+      // after the queue drain — not a temporal diff of two outputs.
+      expect(result.similarity).toBeGreaterThan(0.01)
+      expect(result.inputTexture).toBe('node_0_out')
       expect(result.details).not.toContain('No GL context')
     })
 

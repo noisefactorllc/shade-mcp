@@ -43,98 +43,138 @@ export async function testNoPassthrough(
       const backend = pipeline.backend
       const backendName = backend?.getName?.() || 'unknown'
       if (!renderer) return { status: 'error', isFilterEffect: false, similarity: null, details: 'No renderer' }
-      if (!backend?.gl && !(backend?.readPixels && backend?.textures)) {
+      if (!(backend?.readPixels && backend?.textures)) {
         return { status: 'error', isFilterEffect: false, similarity: null, backend: backendName, details: `No readable pixels on ${backendName} backend` }
       }
 
-      // Check if filter effect (has inputTex in passes)
-      const passes = pipeline.graph?.passes || []
-      const isFilter = passes.some((p: any) => {
-        const inputs = p.inputs || {}
-        return Object.values(inputs).some((v: any) => String(v).includes('input'))
-      })
+      // A filter consumes a pipeline input (inputTex, inputTex3d, o0..o7).
+      // Classify by the pass input KEY (the pipeline input name) or by a value
+      // that names a pipeline input — never by a substring of the bound
+      // texture id: in a compiled graph the values are texture ids such as
+      // node_0_out, so a substring test on values matches nothing (every
+      // effect reported "Not a filter effect") or misclassifies a generator
+      // whose texture ids happen to contain "input" (issue #31).
+      const PIPELINE_INPUTS = ['inputTex', 'inputTex3d', 'o0', 'o1', 'o2', 'o3', 'o4', 'o5', 'o6', 'o7']
+      const isPipelineInput = (name: string) => PIPELINE_INPUTS.includes(name) || renderer.isStarterEffect?.(name) === true
 
-      if (!isFilter) return { status: 'skipped', isFilterEffect: false, similarity: null, details: 'Not a filter effect' }
-
-      // Read the rendered frame through the backend. WebGL2 reads the default
-      // framebuffer synchronously; a backend without a GL context (WebGPU)
-      // reads the offscreen render surface through its async texture reader —
-      // the same surface and candidate fallback the parity capture uses.
-      async function readFrame(t: number): Promise<{ pixels: Uint8Array; width: number; height: number } | null> {
-        renderer.render(t)
-        const gl = backend?.gl
-        if (gl) {
-          const canvas = renderer.canvas
-          const width = canvas.width, height = canvas.height
-          const pixels = new Uint8Array(width * height * 4)
-          gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-          gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
-          return { pixels, width, height }
+      let consumedInput: { key: string; id: string } | null = null
+      for (const pass of (pipeline.graph?.passes || [])) {
+        const inputs = pass.inputs || {}
+        for (const key of Object.keys(inputs)) {
+          const id = String(inputs[key])
+          if (isPipelineInput(key) || isPipelineInput(id)) {
+            consumedInput = { key, id }
+            break
+          }
         }
-        if (backend?.readPixels && backend?.textures) {
+        if (consumedInput) break
+      }
+
+      if (!consumedInput) return { status: 'skipped', isFilterEffect: false, similarity: null, details: 'Not a filter effect' }
+
+      // Read a texture through the backend's async reader — the same path
+      // testPixelParity uses — so the capture works on WebGL2 and WebGPU
+      // alike, instead of a default-framebuffer gl.readPixels that only
+      // exists on WebGL2 and is unreliable when paused.
+      async function readTexture(id: string): Promise<{ pixels: Uint8Array; width: number; height: number } | null> {
+        try {
           // A read issued right after a draw can return the previous frame;
           // drain the submitted work first (same as runDslProgram).
           await backend.device?.queue?.onSubmittedWorkDone?.()
-          const surf = pipeline.graph?.renderSurface
-          if (!surf) return null
-          const candidates = ['global_' + surf + '_read']
-          try {
-            const nodes: string[] = []
-            for (const k of backend.textures.keys()) if (/node_\d+_out/.test(k)) nodes.push(k)
-            nodes.sort((a: string, c: string) => parseInt(a.match(/node_(\d+)/)![1], 10) - parseInt(c.match(/node_(\d+)/)![1], 10))
-            if (nodes.length) candidates.push(nodes[nodes.length - 1])
-          } catch (e) { /* textures map not iterable */ }
-          for (const id of candidates) {
-            try {
-              const px = await backend.readPixels(id)
-              if (px && px.width && px.height && px.data) {
-                const raw = px.data instanceof Float32Array
-                  ? Uint8Array.from(px.data, (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 255))
-                  : new Uint8Array(px.data)
-                return { pixels: raw, width: px.width, height: px.height }
-              }
-            } catch (e) { /* try next candidate */ }
-          }
+          const px = await backend.readPixels(id)
+          if (!px || !px.width || !px.height || !px.data) return null
+          const raw = px.data instanceof Float32Array
+            ? Uint8Array.from(px.data, (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 255))
+            : new Uint8Array(px.data)
+          return { pixels: raw, width: px.width, height: px.height }
+        } catch (e) {
           return null
+        }
+      }
+
+      // The rendered output: prefer the fresh read half of the render
+      // surface's ping-pong pair (frameReadTextures tracks the half the last
+      // present used — a fixed global_<surface>_read guess can pick the
+      // stale half after the swap), then the conventional
+      // global_<surface>_read name, then the last node output.
+      async function readOutput(): Promise<{ pixels: Uint8Array; width: number; height: number } | null> {
+        const surf = pipeline.graph?.renderSurface
+        const candidates: string[] = []
+        const frameRead = surf != null ? pipeline.frameReadTextures?.get?.(surf) : null
+        if (frameRead) candidates.push(frameRead)
+        if (surf) candidates.push('global_' + surf + '_read')
+        try {
+          const nodes: string[] = []
+          for (const k of backend.textures.keys()) if (/node_\d+_out/.test(k)) nodes.push(k)
+          nodes.sort((a: string, c: string) => parseInt(a.match(/node_(\d+)/)![1], 10) - parseInt(c.match(/node_(\d+)/)![1], 10))
+          if (nodes.length) candidates.push(nodes[nodes.length - 1])
+        } catch (e) { /* textures map not iterable */ }
+        for (const id of candidates) {
+          const frame = await readTexture(id)
+          if (frame) return frame
         }
         return null
       }
 
-      // Render two frames at different times and compare
-      const frame0 = await readFrame(0)
-      const frame1 = await readFrame(1.0)
-      if (!frame0 || !frame1) {
+      // Compare the rendered output with the input texture the effect
+      // actually consumes, at one fixed paused time. The verdict does not
+      // depend on animation or color count: a static copy of a varied input
+      // is a passthrough even though it is colorful, and a filter that
+      // changes its input but produces a static, low-color output still
+      // modifies its input (issue #31).
+      if (w[globals.setPaused]) w[globals.setPaused](true)
+      if (w[globals.setPausedTime]) w[globals.setPausedTime](0)
+
+      let inputFrame: { pixels: Uint8Array; width: number; height: number } | null = null
+      let outputFrame: { pixels: Uint8Array; width: number; height: number } | null = null
+      try {
+        // Cold reads can come back blank or the surface may not be
+        // registered yet; retry a bounded number of times (same pattern as
+        // the parity capture).
+        for (let attempt = 0; attempt < 6 && (!inputFrame || !outputFrame); attempt++) {
+          renderer.render(0)
+          renderer.render(0)
+          inputFrame = await readTexture(consumedInput.id)
+          outputFrame = await readOutput()
+          if ((!inputFrame || !outputFrame) && attempt < 5) await new Promise((res) => setTimeout(res, 80))
+        }
+      } finally {
+        if (w[globals.setPaused]) w[globals.setPaused](false)
+      }
+
+      if (!inputFrame) {
+        return { status: 'error', isFilterEffect: true, similarity: null, backend: backendName, inputTexture: consumedInput.id, details: `Failed to read input texture ${consumedInput.id} on ${backendName}` }
+      }
+      if (!outputFrame) {
         return { status: 'error', isFilterEffect: true, similarity: null, backend: backendName, details: `Failed to read pixels on ${backendName}` }
       }
-      const pixels0 = frame0.pixels, pixels1 = frame1.pixels
-      const width = frame0.width, height = frame0.height
 
-      // Compare output at two times
-      const pixelCount = width * height
-      const stride = Math.max(1, Math.floor(pixelCount / 1000))
+      // Mean absolute per-channel difference between output and input,
+      // normalized to 0..1. Only RGB counts: alpha is a present detail, not
+      // effect output.
+      const count = Math.min(inputFrame.width * inputFrame.height, outputFrame.width * outputFrame.height)
+      const stride = Math.max(1, Math.floor(count / 1000))
       let diffSum = 0, samples = 0
-      const colors = new Set<string>()
-
-      for (let i = 0; i < pixelCount; i += stride) {
+      for (let i = 0; i < count; i += stride) {
         const idx = i * 4
-        diffSum += Math.abs(pixels0[idx] - pixels1[idx]) +
-          Math.abs(pixels0[idx + 1] - pixels1[idx + 1]) +
-          Math.abs(pixels0[idx + 2] - pixels1[idx + 2])
-        colors.add(`${pixels0[idx]},${pixels0[idx + 1]},${pixels0[idx + 2]}`)
+        diffSum += Math.abs(outputFrame.pixels[idx] - inputFrame.pixels[idx]) +
+          Math.abs(outputFrame.pixels[idx + 1] - inputFrame.pixels[idx + 1]) +
+          Math.abs(outputFrame.pixels[idx + 2] - inputFrame.pixels[idx + 2])
         samples++
       }
-
-      const temporalDiff = diffSum / (samples * 3 * 255)
-      const uniqueColors = colors.size
-      // An effect that modifies input should either vary over time or produce varied output
-      const isModifying = temporalDiff > 0.01 || uniqueColors > 5
+      const meanDiff = diffSum / (samples * 3 * 255)
+      const threshold = 0.01
+      const isPassthrough = meanDiff <= threshold
 
       return {
-        status: isModifying ? 'ok' : 'passthrough',
+        status: isPassthrough ? 'passthrough' : 'ok',
         isFilterEffect: true,
-        temporalDiff,
-        uniqueColors,
-        details: isModifying ? 'Effect modifies input' : 'Effect may be passing through unchanged'
+        similarity: meanDiff,
+        threshold,
+        inputTexture: consumedInput.id,
+        details: isPassthrough
+          ? `Output matches input (mean diff ${meanDiff.toFixed(4)} <= ${threshold})`
+          : `Effect modifies input (mean diff ${meanDiff.toFixed(4)} > ${threshold})`
       }
     }, session.globals)
 
@@ -145,7 +185,7 @@ export async function testNoPassthrough(
 export function registerTestNoPassthrough(server: McpServer): void {
   server.tool(
     'testNoPassthrough',
-    'Check that filter effects change their input (>1% pixel difference).',
+    'Check that a filter effect modifies the input it consumes: compares the rendered output with the bound input texture at one fixed paused time (>1% mean pixel difference means the effect modifies its input).',
     testNoPassthroughSchema,
     async (args: any) => {
       const config = getConfig()

@@ -170,7 +170,7 @@ These tools require Playwright Chromium; all except `runDslProgram` require a vi
 | `describeEffectFrame` | Render a frame. Analyze the image with AI vision. The tool requires `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. |
 | `benchmarkEffectFPS` | Measure FPS, jitter, and frame timing statistics against a target frame rate. |
 | `testUniformResponsiveness` | Check whether each uniform changes the output. Return a pass/fail result for each uniform. |
-| `testNoPassthrough` | Check that filter effects change their input (>1% pixel difference). |
+| `testNoPassthrough` | Check that a filter effect modifies the input it consumes: compares the rendered output with the bound input texture at one fixed paused time (>1% mean pixel difference means the effect modifies its input). |
 | `testPixelParity` | Compare WebGL2 and WebGPU output pixel by pixel within the epsilon tolerance. |
 | `runDslProgram` | Render every written output surface at frames 1, 120, and 600 after warmup by default, at 960×540. Return one PNG contact sheet as MCP image content plus metrics for each surface and frame. |
 
