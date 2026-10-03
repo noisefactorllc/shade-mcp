@@ -117,7 +117,19 @@ function installWebGpuFakeViewer(globals: ViewerGlobals, options: FakeViewerOpti
   ;(globalThis as any).window = w
   ;(globalThis as any).requestAnimationFrame = (cb: () => void) => setTimeout(() => { frames++; cb() }, 0)
   ;(globalThis as any).document = {
-    getElementById: () => null,
+    // The modeled viewer rebuilds on selection: each change event swaps the
+    // graph object and bumps the compile generation (issue #34 contract).
+    getElementById: (id: string) => id === 'effect-select'
+      ? {
+          value: 'synth/noise',
+          dispatchEvent: (ev: Event) => {
+            if (ev.type !== 'change') return
+            const pipeline = w[globals.renderingPipeline] as any
+            if (pipeline?.graph) pipeline.graph = { ...pipeline.graph }
+            w[globals.pipelineGeneration!] = (w[globals.pipelineGeneration!] || 0) + 1
+          },
+        }
+      : null,
     __canvases: [] as any[],
     createElement: () => {
       const canvas: any = { width: 0, height: 0, lastImageData: null as any }

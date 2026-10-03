@@ -35,6 +35,18 @@ interface FakeViewerOptions {
   // Whether the viewer exposes its current effect's identity at all (default
   // true). false models a viewer with no currentEffect global.
   exposeIdentity?: boolean
+  // Effect id the viewer shows before any selection (default
+  // 'synth/previous').
+  initialEffect?: string
+  // Pass name in the viewer's pre-selection graph (default 'prev'). Set it
+  // to something the post-selection build does NOT produce to tell a stale
+  // graph apart from a fresh one.
+  initialPassName?: string
+  // The selection event itself does not touch the status text (default
+  // false): models a viewer whose rebuild manifests only through the graph
+  // and compile generation, so "nothing changed yet" cannot be told apart
+  // from "rebuild in flight" right after the selection.
+  silentSelect?: boolean
 }
 
 function installFakeViewer(globals: ViewerGlobals, options: FakeViewerOptions): any {
@@ -43,10 +55,11 @@ function installFakeViewer(globals: ViewerGlobals, options: FakeViewerOptions): 
     const [namespace, name] = [id.slice(0, id.indexOf('/')), id.slice(id.indexOf('/') + 1)]
     return { namespace, name, instance: { globals: {} } }
   }
+  const initialEffect = options.initialEffect ?? 'synth/previous'
   const state = {
     backendKind: options.currentBackendValue ?? 'glsl',
-    status: 'compiled synth/previous',
-    graph: { passes: [{ name: 'prev' }], renderSurface: 'frame' } as any,
+    status: `compiled ${initialEffect}`,
+    graph: { passes: [{ name: options.initialPassName ?? 'prev' }], renderSurface: 'frame' } as any,
   }
   const pipeline: any = {
     backend: {
@@ -63,7 +76,7 @@ function installFakeViewer(globals: ViewerGlobals, options: FakeViewerOptions): 
     globalUniforms: {},
   }
   w[globals.renderingPipeline] = pipeline
-  if (options.exposeIdentity !== false) w[globals.currentEffect] = entry('synth/previous')
+  if (options.exposeIdentity !== false) w[globals.currentEffect] = entry(initialEffect)
   w[globals.currentBackend] = () => state.backendKind
   w[globals.pipelineGeneration!] = 0
   w[globals.canvasRenderer] = {
@@ -85,7 +98,7 @@ function installFakeViewer(globals: ViewerGlobals, options: FakeViewerOptions): 
       if (ev.type !== 'change' || options.loadDelayMs === null) return
       const id = selectEl.value
       if (options.exposeIdentity !== false) w[globals.currentEffect] = entry(id)
-      state.status = `selected ${id}`
+      if (!options.silentSelect) state.status = `selected ${id}`
       setTimeout(() => {
         const shown = options.showsEffect ?? id
         if (options.exposeIdentity !== false && shown !== id) w[globals.currentEffect] = entry(shown)
@@ -188,6 +201,33 @@ describe('browser verbs bind results to the requested effect (issue #34)', () =>
       expect(message).toContain('synth/other')
     })
 
+    it(`${name} requires a post-selection build even when re-selecting the effect the viewer already shows`, async () => {
+      // The viewer already shows the requested effect, fully built, and the
+      // selection event itself changes nothing observable; the fresh graph
+      // arrives only after an async rebuild. The pre-selection graph (pass
+      // 'stale-pass') must never be reported as the fresh result.
+      installFakeViewer(DEFAULT_GLOBALS, {
+        requested: 'synth/requested',
+        loadDelayMs: 20,
+        initialEffect: 'synth/requested',
+        initialPassName: 'stale-pass',
+        silentSelect: true,
+      })
+      const session = makeSession('webgl2')
+
+      const result = await run(session, 'synth/requested')
+
+      expect(result.status).not.toBe('error')
+      expect(result.effect_id).toBe('synth/requested')
+      expect(result.backend).toBe('WebGL2')
+      // Evidence of a post-selection build: the reported passes come from
+      // the graph built AFTER the selection, never from the stale one.
+      if (result.passes) {
+        expect(result.passes).toEqual([{ id: 'requested-pass', status: 'ok' }])
+      }
+      expect(JSON.stringify(result)).not.toContain('stale-pass')
+    })
+
     it(`${name} returns status error when the page backend never reaches the requested one`, async () => {
       // No switchBackend, no backend controls: the viewer stays on 'glsl'.
       installFakeViewer(DEFAULT_GLOBALS, { requested: 'synth/requested', loadDelayMs: 20 })
@@ -198,6 +238,10 @@ describe('browser verbs bind results to the requested effect (issue #34)', () =>
       expect(result.status).toBe('error')
       const message = result.message ?? result.error ?? result.details
       expect(message).toMatch(/Backend switch failed/)
+      // The failure result still binds to the page: the backend the page is
+      // really on, and the effect it is really showing.
+      expect(result.backend).toBe('WebGL2')
+      expect(result.effect_id).toBe('synth/previous')
       // The page backend is still the one it started on.
       expect((globalThis as any).window[DEFAULT_GLOBALS.currentBackend]()).toBe('glsl')
     })
@@ -269,6 +313,10 @@ describe('browser verbs bind results to the requested effect (issue #34)', () =>
 
       expect(result.status).toBe('error')
       expect(result.details).toMatch(/WebGPU leg: Backend switch failed/)
+      // The failure result still binds to the page: the backend the page is
+      // really on, and the effect it is really showing.
+      expect(result.backend).toBe('WebGL2')
+      expect(result.effect_id).toBe('synth/requested')
     })
   })
 })

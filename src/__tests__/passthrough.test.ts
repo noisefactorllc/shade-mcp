@@ -98,7 +98,21 @@ function installFakeViewer(globals: ViewerGlobals, options: FakeViewerOptions): 
   w[globals.setPausedTime] = (t: number) => { w.__pausedTime = t }
 
   ;(globalThis as any).window = w
-  ;(globalThis as any).document = { getElementById: () => null }
+  ;(globalThis as any).document = {
+    // The modeled viewer rebuilds on selection: each change event swaps the
+    // graph object and bumps the compile generation (issue #34 contract).
+    getElementById: (id: string) => id === 'effect-select'
+      ? {
+          value: `${namespace}/${name}`,
+          dispatchEvent: (ev: Event) => {
+            if (ev.type !== 'change') return
+            const pipeline = w[globals.renderingPipeline] as any
+            if (pipeline?.graph) pipeline.graph = { ...pipeline.graph }
+            w[globals.pipelineGeneration!] = (w[globals.pipelineGeneration!] || 0) + 1
+          },
+        }
+      : null,
+  }
   return w
 }
 

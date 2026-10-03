@@ -30,7 +30,16 @@ export async function testUniformResponsiveness(
     try {
       await session.setBackend(session.backend)
     } catch (err) {
-      return { status: 'error', tested_uniforms: [], uniforms: [], backend: 'unknown', details: `Backend switch failed: ${errorMessage(err)}` }
+      // Bind even this failure to what the page actually holds (issue #34).
+      const failed = await session.readPageIdentity()
+      return {
+        status: 'error',
+        tested_uniforms: [],
+        uniforms: [],
+        backend: failed.backend ?? 'unknown',
+        details: `Backend switch failed: ${errorMessage(err)}`,
+        ...(failed.effectId ? { effect_id: failed.effectId } : {}),
+      }
     }
 
     // Select and wait until the page finished building THIS effect (issue

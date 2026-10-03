@@ -131,7 +131,9 @@ export async function testPixelParity(
   try {
     await session.setBackend('webgl2')
   } catch (err) {
-    return parityError('WebGL2 leg', `Backend switch failed: ${errorMessage(err)}`, 'unknown', null, [0, 0])
+    // Bind even this failure to what the page actually holds (issue #34).
+    const failed = await session.readPageIdentity()
+    return parityError('WebGL2 leg', `Backend switch failed: ${errorMessage(err)}`, failed.backend ?? 'unknown', failed.effectId, [0, 0])
   }
   let leg: EffectSelectionResult = await session.selectEffect(effectId)
   let problem = legProblem(leg, 'webgl2')
@@ -149,7 +151,9 @@ export async function testPixelParity(
   try {
     await session.setBackend('webgpu')
   } catch (err) {
-    return parityError('WebGPU leg', `Backend switch failed: ${errorMessage(err)}`, 'unknown', leg.effectId, [glslPixels.width, glslPixels.height])
+    // Bind even this failure to what the page actually holds (issue #34).
+    const failed = await session.readPageIdentity()
+    return parityError('WebGPU leg', `Backend switch failed: ${errorMessage(err)}`, failed.backend ?? 'unknown', failed.effectId ?? leg.effectId, [glslPixels.width, glslPixels.height])
   }
   leg = await session.selectEffect(effectId)
   problem = legProblem(leg, 'webgpu')

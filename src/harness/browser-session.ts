@@ -206,13 +206,16 @@ function selectAndAwaitEffect({ effectId, globals, timeout }: {
       }
 
       // Ready, bound to the request: a graph built after this selection whose
-      // identity the page confirms, when the viewer already showed this exact
-      // effect, fully built, before the selection and nothing changed since,
-      // or when the viewer offers no rebuild signal and confirms the
-      // requested id. A rebuild WITHOUT page-confirmed identity is never
-      // accepted — the wait keeps polling and fails closed on timeout.
-      if (ready && ((rebuilt || sawCompiling) && idMatches
-        || (before.effectId === effectId && before.ready && !statusChanged)
+      // identity the page confirms, or — for viewers that expose no rebuild
+      // signal at all — a ready graph whose identity the page confirms. The
+      // pre-selection graph is NEVER accepted on a viewer with rebuild
+      // signals, even when it already shows the requested effect: right
+      // after the selection an asynchronous rebuild may still be pending,
+      // and "nothing changed yet" cannot distinguish "no rebuild coming"
+      // from "rebuild in flight". A rebuild WITHOUT page-confirmed identity
+      // is likewise never accepted — the wait keeps polling and fails closed
+      // on timeout.
+      if (ready && (((rebuilt || sawCompiling) && idMatches)
         || (!hasRebuildSignal && idMatches))) {
         resolve({
           status: 'ok',
@@ -227,6 +230,37 @@ function selectAndAwaitEffect({ effectId, globals, timeout }: {
     }
     poll()
   })
+}
+
+/**
+ * Reads the page's current effect identity and backend name WITHOUT any
+ * selection. Self-contained (runs serialized inside the page or against fake
+ * viewers in tests). Verbs use this to bind even their failure results to
+ * what the page actually holds — a backend-switch failure, for example,
+ * reports the backend the page is really on and the effect it is really
+ * showing, when the page exposes them.
+ */
+function readPageIdentity({ globals }: { globals: ViewerGlobals }): { effectId: string | null; backend: string | null } {
+  const w = window as any
+  const e = w[globals.currentEffect]
+  let effectId: string | null = null
+  if (e) {
+    if (typeof e === 'string') effectId = e
+    else {
+      const ns = typeof e.namespace === 'string' ? e.namespace
+        : e.instance && typeof e.instance.namespace === 'string' ? e.instance.namespace : null
+      const nm = typeof e.name === 'string' ? e.name
+        : e.instance && typeof e.instance.name === 'string' ? e.instance.name : null
+      if (ns && nm) effectId = `${ns}/${nm}`
+      else if (typeof e.id === 'string') effectId = e.id
+      else if (typeof e.effectId === 'string') effectId = e.effectId
+    }
+  }
+  const p = w[globals.renderingPipeline]
+  const backend = p?.backend?.getName?.()
+    ? String(p.backend.getName())
+    : typeof w[globals.currentBackend] === 'function' ? String(w[globals.currentBackend]()) : null
+  return { effectId, backend }
 }
 
 /**
@@ -533,6 +567,15 @@ export class BrowserSession {
       }
     }
     return outcome
+  }
+
+  /**
+   * The page's current effect identity and backend name, without any
+   * selection. Used to bind even failure results to what the page actually
+   * holds (issue #34): values the page does not expose come back null.
+   */
+  async readPageIdentity(): Promise<{ effectId: string | null; backend: string | null }> {
+    return await this.page!.evaluate(readPageIdentity, { globals: this.globals }) as { effectId: string | null; backend: string | null }
   }
 
   async getEffectGlobals(): Promise<Record<string, any>> {

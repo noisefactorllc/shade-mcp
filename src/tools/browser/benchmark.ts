@@ -35,13 +35,16 @@ export async function benchmarkEffectFPS(
     try {
       await session.setBackend(session.backend)
     } catch (err) {
+      // Bind even this failure to what the page actually holds (issue #34).
+      const failed = await session.readPageIdentity()
       return {
         status: 'error' as const,
-        backend: 'unknown',
+        backend: failed.backend ?? 'unknown',
         achieved_fps: 0,
         meets_target: false,
         stats: { frame_count: 0, avg_frame_time_ms: 0, jitter_ms: 0, min_frame_time_ms: 0, max_frame_time_ms: 0 },
         error: `Backend switch failed: ${errorMessage(err)}`,
+        ...(failed.effectId ? { effect_id: failed.effectId } : {}),
       }
     }
 

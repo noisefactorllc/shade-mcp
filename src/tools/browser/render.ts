@@ -35,10 +35,13 @@ export async function renderEffectFrame(
     try {
       await session.setBackend(session.backend)
     } catch (err) {
+      // Bind even this failure to what the page actually holds (issue #34).
+      const failed = await session.readPageIdentity()
       return {
         status: 'error' as const,
-        backend: 'unknown',
+        backend: failed.backend ?? 'unknown',
         error: `Backend switch failed: ${errorMessage(err)}`,
+        ...(failed.effectId ? { effect_id: failed.effectId } : {}),
         ...(options.resolution ? { requested_resolution: options.resolution } : {}),
       }
     }

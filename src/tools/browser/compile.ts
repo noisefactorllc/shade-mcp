@@ -27,7 +27,15 @@ export async function compileEffect(
     try {
       await session.setBackend(session.backend)
     } catch (err) {
-      return { status: 'error' as const, passes: [], message: `Backend switch failed: ${errorMessage(err)}`, backend: 'unknown' }
+      // Bind even this failure to what the page actually holds (issue #34).
+      const page = await session.readPageIdentity()
+      return {
+        status: 'error' as const,
+        passes: [],
+        message: `Backend switch failed: ${errorMessage(err)}`,
+        backend: page.backend ?? 'unknown',
+        ...(page.effectId ? { effect_id: page.effectId } : {}),
+      }
     }
 
     // Select and wait until the page finished building THIS effect (issue

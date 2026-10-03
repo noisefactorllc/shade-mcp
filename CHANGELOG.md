@@ -21,7 +21,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   (`effect_id`) and the actual backend (`pipeline.backend.getName()`).
   A disagreement with the request is a `status: 'error'` result, and when the
   viewer does not expose its current effect's identity at all the verbs fail
-  closed with an error instead of reporting an unconfirmed result.
+  closed with an error instead of reporting an unconfirmed result. A viewer
+  that exposes rebuild signals must prove a graph was built after the
+  selection even when re-selecting the effect it already shows, and
+  backend-switch failures report the page-confirmed effect id and backend
+  too.
 
 - **`testNoPassthrough` now compares the rendered output with the input
   texture the effect consumes, at one fixed paused time.** Filter
