@@ -111,42 +111,13 @@ fn main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
 `)
   client = startMcp(effectsRoot)
   await initialize(client)
-  // WebGPU runs first: on GPU-less CI runners the software WebGL2 sessions of
-  // the webgl2 leg appear to leave the GPU service unable to serve WebGPU
-  // afterwards (both recorded failures: the probe passed, the render right
-  // after the webgl2 leg failed with Dawn's "A valid external Instance
-  // reference no longer exists", minutes after browser-smoke had found no
-  // adapter at all). Giving WebGPU the first fresh browser removes that
-  // dependency instead of tolerating its failure.
+  // WebGPU first, so its device request happens on a fresh browser before
+  // the webgl2 leg. Since the harness pins the bundled SwiftShader Vulkan
+  // ICD for WebGPU sessions (browser-session.ts), the renders below are
+  // required: a device-loss, shader, pipeline or path error fails the run —
+  // there is no skip and no retry, exactly like the webgl2 leg.
   for (const backend of ['webgpu', 'webgl2']) {
-    let tinted
-    if (backend === 'webgpu') {
-      // Availability is decided by rendering, not by an adapter probe: CI
-      // runners intermittently report a device that cannot sustain a real
-      // render, so a positive render attempt is the only honest check. The
-      // attempt doubles as the availability probe: one fresh retry of a
-      // device-loss error, then the fallback contract. Errors that are not
-      // device loss — shader, pipeline, path — are never retried and always
-      // fail the run.
-      const deviceLoss = /external instance|device lost|context lost/i
-      const probeArgs = { backend, frames: [1], warmup_frames: 0 }
-      let attempt = await renderRaw(client, probeArgs)
-      if (attempt.isError && !deviceLoss.test(attempt.text)) {
-        assert.fail(`webgpu: render failed with a non-device-loss error: ${attempt.text}`)
-      }
-      if (attempt.isError) attempt = await renderRaw(client, probeArgs)
-      if (attempt.isError && !deviceLoss.test(attempt.text)) {
-        assert.fail(`webgpu: render failed with a non-device-loss error: ${attempt.text}`)
-      }
-      if (attempt.isError) {
-        // An unavailable device must yield an error response and no image.
-        assert.match(attempt.text, /"status":\s*"error"/)
-        assert.equal(attempt.image, undefined, attempt.text)
-        console.log('authored-dsl: SKIP WebGPU positive render (no renderable device); PASS fallback rejected')
-        continue
-      }
-    }
-    tinted = await render(client, { backend })
+    const tinted = await render(client, { backend })
     const untinted = await render(client, { backend, dsl: workspace.composition.dsl.replace('amount: 0.4', 'amount: 0') })
     assert.notEqual(tinted, untinted, `${backend}: the second effect must change pixels`)
     assert.equal(await render(client, { backend }), tinted, `${backend}: a fresh call reproduces the composition`)
