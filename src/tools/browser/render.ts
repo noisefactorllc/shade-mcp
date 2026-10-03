@@ -57,6 +57,24 @@ export async function renderEffectFrame(
       }, { unis: options.uniforms, globals: session.globals })
     }
 
+    // Best-effort honor of the requested resolution: the viewport alone does
+    // not size the render canvas — the viewer's own layout logic does, and a
+    // viewer whose canvas does not follow the window would otherwise capture
+    // at a different size and return a silent `ok`. Prefer the viewer's
+    // resize hook when it exposes one, else size the render canvas directly.
+    // The capture below verifies the actual size and reports a mismatch, so a
+    // viewer that ignores both paths is never silently accepted.
+    if (options.resolution) {
+      await page.evaluate(({ width, height, globals }) => {
+        const renderer = (window as any)[globals.canvasRenderer]
+        if (!renderer) return
+        try {
+          if (typeof renderer.resize === 'function') renderer.resize(width, height)
+          else if (renderer.canvas) { renderer.canvas.width = width; renderer.canvas.height = height }
+        } catch (e) { /* fixed-size canvas: the capture reports the mismatch */ }
+      }, { width: options.resolution[0], height: options.resolution[1], globals: session.globals })
+    }
+
     // Warm up while the render loop is still live. A timed render pauses the
     // viewer below, and a paused viewer freezes the frame counter, so warming
     // up after the pause would stall for the whole timeout on every
@@ -106,7 +124,7 @@ export async function renderEffectFrame(
 
     try {
       // Read pixels and compute metrics
-      const result = await page.evaluate(async ({ captureImage, globals, time }) => {
+      const result = await page.evaluate(async ({ captureImage, globals, time, requested }) => {
         const pipeline = (window as any)[globals.renderingPipeline]
         if (!pipeline) return { status: 'error', backend: 'unknown', error: 'No renderer' }
 
@@ -256,9 +274,16 @@ export async function renderEffectFrame(
           imageUri = tmpCanvas.toDataURL('image/png')
         }
 
+        // A viewer that did not honor the requested resolution must never
+        // return a silent `ok`: echo the request and warn with both sizes.
+        const resolutionMismatch = requested !== null && (width !== requested[0] || height !== requested[1])
         return {
           status: 'ok' as const,
           backend: pipeline.backend?.getName?.() || 'unknown',
+          ...(requested ? { requested_resolution: requested } : {}),
+          ...(resolutionMismatch ? {
+            warning: `Requested resolution ${requested[0]}x${requested[1]} but rendered ${width}x${height}; the viewer did not honor the requested resolution`,
+          } : {}),
           frame: { image_uri: imageUri, width, height },
           metrics: {
             mean_rgb: [meanR, meanG, meanB] as [number, number, number],
@@ -272,7 +297,7 @@ export async function renderEffectFrame(
             is_monochrome: isMono
           }
         }
-      }, { captureImage: options.captureImage ?? false, globals: session.globals, time: options.time ?? null })
+      }, { captureImage: options.captureImage ?? false, globals: session.globals, time: options.time ?? null, requested: options.resolution ?? null })
 
       return result as RenderResult
     } finally {

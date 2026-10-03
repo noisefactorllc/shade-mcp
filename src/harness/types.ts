@@ -68,6 +68,11 @@ export interface RenderResult {
   status: 'ok' | 'error'
   backend: string
   error?: string
+  // Echo of the `resolution` request, present whenever one was made.
+  requested_resolution?: [number, number]
+  // Set when the captured frame size differs from `requested_resolution`:
+  // a requested resolution is never silently accepted as `ok`.
+  warning?: string
   frame?: { image_uri?: string; width: number; height: number }
   metrics?: ImageMetrics
   console_errors?: string[]
@@ -78,6 +83,12 @@ export interface BenchmarkResult {
   backend: string
   achieved_fps: number
   meets_target: boolean
+  // Echo of the `resolution` request, present whenever one was made.
+  requested_resolution?: [number, number]
+  // Set when the measured frame size differs from `requested_resolution`.
+  warning?: string
+  // Frame size the benchmark measured at (the viewer's canvas backing size).
+  frame?: { width: number; height: number }
   stats: {
     frame_count: number
     avg_frame_time_ms: number

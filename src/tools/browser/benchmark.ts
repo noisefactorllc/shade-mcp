@@ -46,6 +46,21 @@ export async function benchmarkEffectFPS(
       return t.includes('loaded') || t.includes('compiled') || t.includes('ready') || t.includes('error')
     }, { timeout: session.timeoutMs })
 
+    // Best-effort honor of the requested resolution (same as renderEffectFrame):
+    // the viewport alone does not size the render canvas. Prefer the viewer's
+    // resize hook, else size the canvas directly; the measured frame size is
+    // reported below either way.
+    if (options.resolution) {
+      await page.evaluate(({ width, height, globals }) => {
+        const renderer = (window as any)[globals.canvasRenderer]
+        if (!renderer) return
+        try {
+          if (typeof renderer.resize === 'function') renderer.resize(width, height)
+          else if (renderer.canvas) { renderer.canvas.width = width; renderer.canvas.height = height }
+        } catch (e) { /* fixed-size canvas: reported below */ }
+      }, { width: options.resolution[0], height: options.resolution[1], globals: session.globals })
+    }
+
     // Run benchmark with per-frame timing
     const result = await page.evaluate(({ duration }) => {
       return new Promise<any>((resolve) => {
@@ -93,10 +108,24 @@ export async function benchmarkEffectFPS(
       })
     }, { duration })
 
+    // Report the frame size the benchmark actually measured at: the viewer's
+    // layout owns the canvas backing size, so it can differ from the request.
+    const frame = await page.evaluate((globals) => {
+      const canvas = (window as any)[globals.canvasRenderer]?.canvas
+      return canvas ? { width: canvas.width, height: canvas.height } : null
+    }, session.globals)
+
     const backend = session.backend
+    const resolutionMismatch = options.resolution !== undefined && frame !== null
+      && (frame.width !== options.resolution[0] || frame.height !== options.resolution[1])
     return {
       status: 'ok' as const,
       backend,
+      ...(options.resolution ? { requested_resolution: options.resolution } : {}),
+      ...(frame ? { frame } : {}),
+      ...(resolutionMismatch ? {
+        warning: `Requested resolution ${options.resolution![0]}x${options.resolution![1]} but measured ${frame!.width}x${frame!.height}; the viewer did not honor the requested resolution`,
+      } : {}),
       achieved_fps: result.achieved_fps,
       meets_target: result.achieved_fps >= targetFps,
       stats: {
