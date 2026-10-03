@@ -13,24 +13,6 @@ const { parseWorkspace } = await import(pathToFileURL(join(portable, 'workspace.
 const workspace = parseWorkspace(await readFile(join(portable, 'fixtures/two-effect-workspace.json'), 'utf8'))
 const effectsRoot = await mkdtemp(join(tmpdir(), 'shade-authored-dsl-'))
 
-async function hasWebGpuDevice() {
-  const { BrowserSession } = await import('../dist/harness/index.js')
-  const probe = new BrowserSession({ backend: 'webgpu', blankPage: true,
-    viewerRoot: noisemaker, effectsDir: effectsRoot })
-  try {
-    await probe.setup()
-    return await probe.page.evaluate(async () => {
-      try {
-        const adapter = await navigator.gpu?.requestAdapter()
-        if (!adapter) return false
-        const device = await adapter.requestDevice()
-        device.destroy()
-        return true
-      } catch { return false }
-    })
-  } finally { await probe.teardown() }
-}
-
 function startMcp(effectsDir) {
   const server = spawn('node', ['dist/index.js'], {
     stdio: ['pipe', 'pipe', 'inherit'],
@@ -129,44 +111,42 @@ fn main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
 `)
   client = startMcp(effectsRoot)
   await initialize(client)
-  const webgpuAvailable = await hasWebGpuDevice()
-  for (const backend of ['webgl2', 'webgpu']) {
+  // WebGPU runs first: on GPU-less CI runners the software WebGL2 sessions of
+  // the webgl2 leg appear to leave the GPU service unable to serve WebGPU
+  // afterwards (both recorded failures: the probe passed, the render right
+  // after the webgl2 leg failed with Dawn's "A valid external Instance
+  // reference no longer exists", minutes after browser-smoke had found no
+  // adapter at all). Giving WebGPU the first fresh browser removes that
+  // dependency instead of tolerating its failure.
+  for (const backend of ['webgpu', 'webgl2']) {
     let tinted
-    if (backend === 'webgpu' && !webgpuAvailable) {
-      // Native driver messages vary (including Dawn's external-instance error).
-      // An unavailable device must yield an error response and no image.
-      await render(client, { backend }, /"status":\s*"error"/)
-      console.log('authored-dsl: SKIP WebGPU positive render (no device); PASS fallback rejected')
-      continue
-    }
     if (backend === 'webgpu') {
-      // The device probe is optimistic: CI runners intermittently report a
-      // device that Dawn reclaims before the renderer opens its own page
-      // ("A valid external Instance reference no longer exists."). One fresh
-      // attempt decides whether the device is real; a repeated device-loss
-      // failure means this environment has no usable device and must behave
-      // exactly like the no-device path. The matcher names only device-loss
-      // errors, so shader, pipeline and path failures are never retried and
-      // always fail the run.
+      // Availability is decided by rendering, not by an adapter probe: CI
+      // runners intermittently report a device that cannot sustain a real
+      // render, so a positive render attempt is the only honest check. The
+      // attempt doubles as the availability probe: one fresh retry of a
+      // device-loss error, then the fallback contract. Errors that are not
+      // device loss — shader, pipeline, path — are never retried and always
+      // fail the run.
       const deviceLoss = /external instance|device lost|context lost/i
-      let attempt = await renderRaw(client, { backend })
+      const probeArgs = { backend, frames: [1], warmup_frames: 0 }
+      let attempt = await renderRaw(client, probeArgs)
       if (attempt.isError && !deviceLoss.test(attempt.text)) {
         assert.fail(`webgpu: render failed with a non-device-loss error: ${attempt.text}`)
       }
-      if (attempt.isError) attempt = await renderRaw(client, { backend })
+      if (attempt.isError) attempt = await renderRaw(client, probeArgs)
       if (attempt.isError && !deviceLoss.test(attempt.text)) {
         assert.fail(`webgpu: render failed with a non-device-loss error: ${attempt.text}`)
       }
       if (attempt.isError) {
+        // An unavailable device must yield an error response and no image.
         assert.match(attempt.text, /"status":\s*"error"/)
         assert.equal(attempt.image, undefined, attempt.text)
-        console.log('authored-dsl: SKIP WebGPU positive render (device unusable after probe); PASS fallback rejected')
+        console.log('authored-dsl: SKIP WebGPU positive render (no renderable device); PASS fallback rejected')
         continue
       }
-      tinted = attempt.image.data
-    } else {
-      tinted = await render(client, { backend })
     }
+    tinted = await render(client, { backend })
     const untinted = await render(client, { backend, dsl: workspace.composition.dsl.replace('amount: 0.4', 'amount: 0') })
     assert.notEqual(tinted, untinted, `${backend}: the second effect must change pixels`)
     assert.equal(await render(client, { backend }), tinted, `${backend}: a fresh call reproduces the composition`)
