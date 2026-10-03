@@ -47,6 +47,16 @@ interface FakeViewerOptions {
   // and compile generation, so "nothing changed yet" cannot be told apart
   // from "rebuild in flight" right after the selection.
   silentSelect?: boolean
+  // A compile is ALREADY in flight when the selection fires (default false).
+  // Its eventual graph swap and generation bump belong to that pre-existing
+  // build, not to the selection.
+  compileInFlight?: boolean
+  // With compileInFlight: after the in-flight build completes, the viewer
+  // starts and finishes ANOTHER build (one attributable to the selection).
+  secondBuild?: boolean
+  // Canvas size the renderer reports while on the wgsl backend (default
+  // 4x4) — lets the two parity legs capture at different resolutions.
+  webgpuCanvas?: { width: number; height: number }
 }
 
 function installFakeViewer(globals: ViewerGlobals, options: FakeViewerOptions): any {
@@ -68,9 +78,14 @@ function installFakeViewer(globals: ViewerGlobals, options: FakeViewerOptions): 
       gl: { bindFramebuffer: () => {}, readPixels: (_x: number, _y: number, _wd: number, _ht: number, _f: number, _t: number, out: Uint8Array) => out.fill(200) },
       textures: new Map([['global_frame_read', {}]]),
       device: { queue: { onSubmittedWorkDone: async () => {} } },
-      readPixels: async (id: string) => ({ data: new Uint8Array(4 * 4 * 4).fill(200), width: 4, height: 4 }),
+      // Offscreen readback; on wgsl it reports the modeled WebGPU surface
+      // size so the two parity legs can capture at different resolutions.
+      readPixels: async (id: string) => {
+        const size = state.backendKind === 'wgsl' && options.webgpuCanvas ? options.webgpuCanvas : { width: 4, height: 4 }
+        return { data: new Uint8Array(size.width * size.height * 4).fill(200), width: size.width, height: size.height }
+      },
     },
-    isCompiling: false,
+    isCompiling: options.compileInFlight === true,
     get graph() { return state.graph },
     setUniform: () => {},
     globalUniforms: {},
@@ -80,7 +95,10 @@ function installFakeViewer(globals: ViewerGlobals, options: FakeViewerOptions): 
   w[globals.currentBackend] = () => state.backendKind
   w[globals.pipelineGeneration!] = 0
   w[globals.canvasRenderer] = {
-    canvas: { width: 4, height: 4 },
+    canvas: {
+      get width() { return state.backendKind === 'wgsl' && options.webgpuCanvas ? options.webgpuCanvas.width : 4 },
+      get height() { return state.backendKind === 'wgsl' && options.webgpuCanvas ? options.webgpuCanvas.height : 4 },
+    },
     render: () => {},
     ...(options.switchBackend
       ? { switchBackend: async (b: string) => { state.backendKind = b } }
@@ -99,6 +117,28 @@ function installFakeViewer(globals: ViewerGlobals, options: FakeViewerOptions): 
       const id = selectEl.value
       if (options.exposeIdentity !== false) w[globals.currentEffect] = entry(id)
       if (!options.silentSelect) state.status = `selected ${id}`
+      if (options.compileInFlight) {
+        // The in-flight build (started BEFORE the selection) completes: its
+        // graph swap and generation bump are not evidence of a post-selection
+        // build. With secondBuild, the viewer then runs another compile that
+        // IS attributable to the selection.
+        setTimeout(() => {
+          state.graph = { passes: [{ name: 'inflight-done-pass', inputs: {} }], renderSurface: 'frame' }
+          pipeline.isCompiling = false
+          w[globals.pipelineGeneration!] = (w[globals.pipelineGeneration!] || 0) + 1
+          state.status = `compiled ${id}`
+          if (options.secondBuild) {
+            pipeline.isCompiling = true
+            setTimeout(() => {
+              state.graph = { passes: [{ name: `${id.split('/')[1]}-pass`, inputs: {} }], renderSurface: 'frame' }
+              pipeline.isCompiling = false
+              w[globals.pipelineGeneration!] = (w[globals.pipelineGeneration!] || 0) + 1
+              state.status = `compiled ${id}`
+            }, 20)
+          }
+        }, options.loadDelayMs!)
+        return
+      }
       setTimeout(() => {
         const shown = options.showsEffect ?? id
         if (options.exposeIdentity !== false && shown !== id) w[globals.currentEffect] = entry(shown)
@@ -228,6 +268,27 @@ describe('browser verbs bind results to the requested effect (issue #34)', () =>
       expect(JSON.stringify(result)).not.toContain('stale-pass')
     })
 
+    it(`${name} does not accept a compile that was already in flight before the selection`, async () => {
+      // The viewer already shows the requested id and a build for it is in
+      // flight. That build's completion (graph swap + generation bump) is
+      // NOT evidence of a post-selection build: the wait must not resolve ok
+      // on it, and the in-flight build's passes are never reported fresh.
+      installFakeViewer(DEFAULT_GLOBALS, {
+        requested: 'synth/requested',
+        loadDelayMs: 20,
+        initialEffect: 'synth/requested',
+        compileInFlight: true,
+      })
+      const session = makeSession('webgl2')
+
+      const result = await run(session, 'synth/requested')
+
+      expect(result.status).toBe('error')
+      const message = result.message ?? result.error ?? result.details
+      expect(message).toMatch(/Timed out/)
+      expect(JSON.stringify(result)).not.toContain('inflight-done-pass')
+    })
+
     it(`${name} returns status error when the page backend never reaches the requested one`, async () => {
       // No switchBackend, no backend controls: the viewer stays on 'glsl'.
       installFakeViewer(DEFAULT_GLOBALS, { requested: 'synth/requested', loadDelayMs: 20 })
@@ -244,6 +305,30 @@ describe('browser verbs bind results to the requested effect (issue #34)', () =>
       expect(result.effect_id).toBe('synth/previous')
       // The page backend is still the one it started on.
       expect((globalThis as any).window[DEFAULT_GLOBALS.currentBackend]()).toBe('glsl')
+    })
+
+    it(`${name} accepts only a build that started after the selection`, async () => {
+      // Same setup, but the viewer runs a SECOND compile after the in-flight
+      // one completes — a build attributable to the selection. Its graph is
+      // the one reported.
+      installFakeViewer(DEFAULT_GLOBALS, {
+        requested: 'synth/requested',
+        loadDelayMs: 20,
+        initialEffect: 'synth/requested',
+        compileInFlight: true,
+        secondBuild: true,
+      })
+      const session = makeSession('webgl2')
+
+      const result = await run(session, 'synth/requested')
+
+      expect(result.status).not.toBe('error')
+      expect(result.effect_id).toBe('synth/requested')
+      expect(result.backend).toBe('WebGL2')
+      if (result.passes) {
+        expect(result.passes).toEqual([{ id: 'requested-pass', status: 'ok' }])
+      }
+      expect(JSON.stringify(result)).not.toContain('inflight-done-pass')
     })
 
     it(`${name} fails closed when the viewer does not expose its current effect's identity`, async () => {
@@ -302,6 +387,26 @@ describe('browser verbs bind results to the requested effect (issue #34)', () =>
 
       expect(result.status).toBe('error')
       expect(result.details).toMatch(/does not report which effect/)
+    })
+
+    it('binds the capture size mismatch error to the page identity', async () => {
+      // The WebGPU leg renders at a different resolution than the WebGL2
+      // leg; the error result still carries the final leg's page-confirmed
+      // effect id and backend name.
+      installFakeViewer(DEFAULT_GLOBALS, {
+        requested: 'synth/requested',
+        loadDelayMs: 20,
+        switchBackend: true,
+        webgpuCanvas: { width: 8, height: 8 },
+      })
+      const session = makeSession('webgl2')
+
+      const result = await testPixelParity(session, 'synth/requested', { seed: 7 })
+
+      expect(result.status).toBe('error')
+      expect(result.details).toMatch(/Capture size mismatch/)
+      expect(result.effect_id).toBe('synth/requested')
+      expect(result.backend).toBe('WebGPU')
     })
 
     it('returns status error when the WebGPU leg cannot reach the backend', async () => {

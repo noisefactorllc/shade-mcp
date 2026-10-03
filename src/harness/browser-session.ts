@@ -121,6 +121,11 @@ function selectAndAwaitEffect({ effectId, globals, timeout }: {
     const before = {
       effectId: readId(),
       ready: !!(p0 && !p0.isCompiling && p0.graph?.passes && p0.graph.passes.length > 0),
+      // Whether a compile was ALREADY in flight when the selection fired: the
+      // graph it eventually produces (and its generation bump) belong to that
+      // pre-existing build, not to this selection, so they are not evidence
+      // of a post-selection build.
+      compiling: !!(p0 && p0.isCompiling),
       graph: p0 ? (p0.graph ?? null) : null,
       generation: typeof genName === 'string' && typeof w[genName] === 'number' ? w[genName] : null,
       statusText: document.getElementById('status')?.textContent || '',
@@ -133,7 +138,11 @@ function selectAndAwaitEffect({ effectId, globals, timeout }: {
     }
 
     const start = Date.now()
-    let sawCompiling = false
+    let compilingNow = before.compiling
+    // True once a compile START is observed after the selection (isCompiling
+    // going true between polls). The tail of a compile that was already in
+    // flight before the selection never sets this.
+    let newBuildObserved = false
     const poll = () => {
       const p = w[globals.renderingPipeline]
       const backendName: string = p?.backend?.getName?.() || 'unknown'
@@ -158,14 +167,36 @@ function selectAndAwaitEffect({ effectId, globals, timeout }: {
 
       if (!p) { setTimeout(poll, 50); return }
 
-      if (p.isCompiling) { sawCompiling = true; setTimeout(poll, 50); return }
+      // Compile START observed after the selection (isCompiling going true
+      // between polls)? The tail of a compile already in flight before the
+      // selection is a continuation, not a new start.
+      const compiling = !!p.isCompiling
+      if (compiling && !compilingNow) newBuildObserved = true
+      compilingNow = compiling
+
+      // While a compile runs, the graph in front of us is mid-rebuild — the
+      // passes are whatever the previous build left; never accept them.
+      if (compiling) { setTimeout(poll, 50); return }
 
       const ready = !!(passes && passes.length > 0)
-      // Did the pipeline rebuild after this selection? A graph swap, a bumped
-      // compile generation, or an observed isCompiling round-trip all prove a
-      // graph built after the selection is in front of us.
-      const rebuilt = graph !== before.graph
+      // Evidence of a graph built after THIS selection. When nothing was
+      // compiling at selection time, a graph swap, a bumped compile
+      // generation, or an observed compile start all prove it. When a
+      // compile was already in flight, its eventual graph swap and single
+      // generation bump belong to THAT build — evidence must be attributable
+      // to the new selection: a compile START observed after the selection,
+      // or a generation advance of two or more (the in-flight build's
+      // completion plus another build's). A single +1 bump is exactly what
+      // the pre-existing build's completion looks like, so it is never
+      // accepted; with no generation global, only an observed start counts.
+      const graphChanged = graph !== before.graph
         || (before.generation !== null && generation !== null && generation !== before.generation)
+      const generationDelta = before.generation !== null && generation !== null
+        ? generation - before.generation
+        : null
+      const rebuilt = before.compiling
+        ? ready && (newBuildObserved || (generationDelta !== null && generationDelta >= 2))
+        : ready && (graphChanged || newBuildObserved)
       const idMatches = idNow !== null && idNow === effectId
       const statusChanged = statusText !== before.statusText
       const failing = /error|failed/.test(statusText.toLowerCase())
@@ -179,7 +210,7 @@ function selectAndAwaitEffect({ effectId, globals, timeout }: {
       // A confirmed mismatch: the page rebuilt after this selection but now
       // reports a different, readable effect id. Fail closed immediately with
       // the page-confirmed identity instead of measuring the wrong graph.
-      if (ready && (rebuilt || sawCompiling) && idNow !== null && idNow !== effectId) {
+      if (ready && rebuilt && idNow !== null && idNow !== effectId) {
         resolve({
           status: 'error',
           message: `The viewer is showing ${idNow}, not the requested ${effectId}`,
@@ -194,7 +225,7 @@ function selectAndAwaitEffect({ effectId, globals, timeout }: {
       // text: the failure must be bound to this selection (identity or a
       // rebuild observed) and must be fresh (the text changed, or the
       // pipeline rebuilt since the selection).
-      if (failing && (idMatches || rebuilt || sawCompiling) && (statusChanged || rebuilt || sawCompiling)) {
+      if (failing && (idMatches || rebuilt) && (statusChanged || rebuilt)) {
         resolve({
           status: 'error',
           message: statusText || 'Compilation failed',
@@ -215,7 +246,7 @@ function selectAndAwaitEffect({ effectId, globals, timeout }: {
       // from "rebuild in flight". A rebuild WITHOUT page-confirmed identity
       // is likewise never accepted — the wait keeps polling and fails closed
       // on timeout.
-      if (ready && (((rebuilt || sawCompiling) && idMatches)
+      if (ready && ((rebuilt && idMatches)
         || (!hasRebuildSignal && idMatches))) {
         resolve({
           status: 'ok',

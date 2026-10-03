@@ -23,9 +23,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   viewer does not expose its current effect's identity at all the verbs fail
   closed with an error instead of reporting an unconfirmed result. A viewer
   that exposes rebuild signals must prove a graph was built after the
-  selection even when re-selecting the effect it already shows, and
-  backend-switch failures report the page-confirmed effect id and backend
-  too.
+  selection even when re-selecting the effect it already shows, the
+  completion of a compile that was already in flight before the selection is
+  never treated as that evidence, backend-switch failures report the
+  page-confirmed effect id and backend too, and every parity error result —
+  including a capture size mismatch — carries the final leg's page-confirmed
+  identity.
 
 - **`testNoPassthrough` now compares the rendered output with the input
   texture the effect consumes, at one fixed paused time.** Filter

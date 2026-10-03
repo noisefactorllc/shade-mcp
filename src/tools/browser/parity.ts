@@ -173,10 +173,14 @@ export async function testPixelParity(
 
   // Guard against comparing mismatched capture dimensions (would corrupt the
   // per-channel diff and Y-flip loops by indexing past the smaller buffer).
+  // The result still reports the final leg's page-confirmed identity (issue
+  // #34): every browser result binds to the page.
   if (glslPixels.width !== wgslPixels.width || glslPixels.height !== wgslPixels.height) {
     return {
       status: 'error', maxDiff: 0, meanDiff: 0, mismatchCount: 0, mismatchPercent: 0,
       resolution: [glslPixels.width, glslPixels.height],
+      ...(leg.effectId ? { effect_id: leg.effectId } : {}),
+      ...(leg.backend !== 'unknown' ? { backend: leg.backend } : {}),
       details: `Capture size mismatch: glsl ${glslPixels.width}x${glslPixels.height} vs wgsl ${wgslPixels.width}x${wgslPixels.height}`,
     }
   }
