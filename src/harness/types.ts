@@ -68,7 +68,9 @@ export interface RenderResult {
   status: 'ok' | 'error'
   backend: string
   error?: string
-  // Echo of the `resolution` request, present whenever one was made.
+  // Echo of the `resolution` request, present whenever one was made,
+  // including error results (the caller must see the request even when
+  // rendering fails).
   requested_resolution?: [number, number]
   // Set when the captured frame size differs from `requested_resolution`:
   // a requested resolution is never silently accepted as `ok`.

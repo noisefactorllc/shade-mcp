@@ -126,13 +126,17 @@ export async function renderEffectFrame(
       // Read pixels and compute metrics
       const result = await page.evaluate(async ({ captureImage, globals, time, requested }) => {
         const pipeline = (window as any)[globals.renderingPipeline]
-        if (!pipeline) return { status: 'error', backend: 'unknown', error: 'No renderer' }
+        // Error paths echo the requested resolution too: the caller must be
+        // able to see the request was made even when rendering fails.
+        const withRequested = (base: { status: 'error'; backend: string; error: string }) =>
+          requested ? { ...base, requested_resolution: requested } : base
+        if (!pipeline) return withRequested({ status: 'error', backend: 'unknown', error: 'No renderer' })
 
         const backend = pipeline.backend
         const backendName = backend?.getName?.() || 'unknown'
 
         const renderer = (window as any)[globals.canvasRenderer]
-        if (!renderer) return { status: 'error', backend: backendName, error: `No renderer on ${backendName}` }
+        if (!renderer) return withRequested({ status: 'error', backend: backendName, error: `No renderer on ${backendName}` })
 
         const canvas = renderer.canvas
 
@@ -209,11 +213,11 @@ export async function renderEffectFrame(
         }
 
         if (!pixels) {
-          return {
+          return withRequested({
             status: 'error' as const,
             backend: backendName,
             error: `Failed to read pixels on ${backendName}: no readable render surface`,
-          }
+          })
         }
 
         // Compute metrics

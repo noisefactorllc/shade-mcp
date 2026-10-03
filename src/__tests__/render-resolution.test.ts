@@ -165,6 +165,43 @@ describe('renderEffectFrame resolution honoring (issue #33)', () => {
     expect(result.warning).toBeUndefined()
     expect(result.requested_resolution).toBeUndefined()
   })
+
+  it('echoes the requested resolution when no pipeline is installed', async () => {
+    installFakeViewer(DEFAULT_GLOBALS, { canvasWidth: 90, canvasHeight: 90, fixed: true })
+    const { session } = makeSession()
+    delete ((globalThis as any).window as any)[DEFAULT_GLOBALS.renderingPipeline]
+
+    const result = await renderEffectFrame(session, 'synth/noise', { warmupFrames: 2, resolution: [256, 256] })
+
+    expect(result.status).toBe('error')
+    expect(result.error).toContain('No renderer')
+    expect(result.requested_resolution).toEqual([256, 256])
+  })
+
+  it('echoes the requested resolution when no renderer is installed', async () => {
+    installFakeViewer(DEFAULT_GLOBALS, { canvasWidth: 90, canvasHeight: 90, fixed: true })
+    const { session } = makeSession()
+    delete ((globalThis as any).window as any)[DEFAULT_GLOBALS.canvasRenderer]
+
+    const result = await renderEffectFrame(session, 'synth/noise', { warmupFrames: 2, resolution: [256, 256] })
+
+    expect(result.status).toBe('error')
+    expect(result.error).toContain('No renderer on webgl2')
+    expect(result.requested_resolution).toEqual([256, 256])
+  })
+
+  it('echoes the requested resolution when no readable surface exists', async () => {
+    const w: any = installFakeViewer(DEFAULT_GLOBALS, { canvasWidth: 90, canvasHeight: 90, fixed: true })
+    const { session } = makeSession()
+    // WebGPU-shaped backend without an async reader: nothing can deliver pixels.
+    w[DEFAULT_GLOBALS.renderingPipeline] = { backend: { getName: () => 'webgpu' } }
+
+    const result = await renderEffectFrame(session, 'synth/noise', { warmupFrames: 2, resolution: [256, 256] })
+
+    expect(result.status).toBe('error')
+    expect(result.error).toContain('Failed to read pixels on webgpu')
+    expect(result.requested_resolution).toEqual([256, 256])
+  })
 })
 
 describe('benchmarkEffectFPS frame size reporting (issue #33)', () => {
