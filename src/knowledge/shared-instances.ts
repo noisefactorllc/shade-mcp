@@ -13,24 +13,41 @@ const INDEX_TTL_MS = 5000
 let effectIndex: EffectIndex | null = null
 let builtAt = 0
 let building: Promise<EffectIndex> | null = null
+// Incremented on every invalidation. A build that scanned the directory
+// before an invalidation must not publish its stale result into the cache
+// when it finishes.
+let epoch = 0
+let buildEpoch = 0
 
 export async function getSharedEffectIndex(): Promise<EffectIndex> {
   if (effectIndex && Date.now() - builtAt < INDEX_TTL_MS) return effectIndex
-  // Concurrent callers share one build rather than each scanning the directory.
-  if (building) return building
+  // Concurrent callers share one build rather than each scanning the
+  // directory, but only a build from the current epoch: invalidation
+  // supersedes anything still in flight.
+  if (building && buildEpoch === epoch) return building
 
+  const current = epoch
   building = (async () => {
     const index = new EffectIndex()
     await index.initialize(getConfig().effectsDir)
-    effectIndex = index
-    builtAt = Date.now()
+    // If invalidation happened while scanning, this index is already stale;
+    // a newer build owns the cache, so leave it alone.
+    if (buildEpoch === current) {
+      effectIndex = index
+      builtAt = Date.now()
+    }
     return index
   })()
+  // Set after the promise is created but before it can be awaited: the body
+  // suspends at its first await, so the publish check above can only run
+  // once buildEpoch is in place.
+  buildEpoch = current
+  const promise = building
 
   try {
-    return await building
+    return await promise
   } finally {
-    building = null
+    if (building === promise) building = null
   }
 }
 
@@ -38,4 +55,5 @@ export async function getSharedEffectIndex(): Promise<EffectIndex> {
 export function invalidateSharedEffectIndex(): void {
   effectIndex = null
   builtAt = 0
+  epoch++
 }
