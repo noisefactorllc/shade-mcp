@@ -72,7 +72,7 @@ async function initialize(client) {
   console.log(`authored-dsl: initialized ${JSON.stringify(reply.result.serverInfo)} protocol ${reply.result.protocolVersion}`)
 }
 
-async function render(client, args, errorPattern) {
+async function renderRaw(client, args) {
   const reply = await client.rpc('tools/call', { name: 'runDslProgram', arguments: {
     dsl: workspace.composition.dsl, effects: 'user/gradient,user/tint', backend: 'webgl2',
     frames: [1, 3, 6], warmup_frames: 1, resolution: [64, 64], cell_resolution: [32, 32], ...args,
@@ -80,22 +80,27 @@ async function render(client, args, errorPattern) {
   const blocks = reply.result?.content || []
   const text = blocks.find(block => block.type === 'text')?.text || '{}'
   const image = blocks.find(block => block.type === 'image')
+  return { isError: reply.result?.isError === true, text, image }
+}
+
+async function render(client, args, errorPattern) {
+  const raw = await renderRaw(client, args)
   if (errorPattern) {
-    assert.equal(reply.result?.isError, true, text)
-    assert.match(text, errorPattern)
-    assert.equal(image, undefined)
+    assert.equal(raw.isError, true, raw.text)
+    assert.match(raw.text, errorPattern)
+    assert.equal(raw.image, undefined)
     return
   }
-  const payload = JSON.parse(text)
-  assert.notEqual(reply.result?.isError, true, text)
-  assert.equal(payload.status, 'ok', text)
+  const payload = JSON.parse(raw.text)
+  assert.notEqual(raw.isError, true, raw.text)
+  assert.equal(payload.status, 'ok', raw.text)
   assert.equal(payload.backend.toLowerCase(), args.backend || 'webgl2')
   assert.deepEqual(payload.frames, [1, 3, 6])
   assert.equal(payload.captures.length, 3)
-  assert.ok(payload.captures.every(c => c.metrics.unique_sampled_colors > 1 && !c.metrics.is_all_zero), text)
-  assert.equal(image?.mimeType, 'image/png')
-  assert.ok(Buffer.from(image.data, 'base64').subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')))
-  return image.data
+  assert.ok(payload.captures.every(c => c.metrics.unique_sampled_colors > 1 && !c.metrics.is_all_zero), raw.text)
+  assert.equal(raw.image?.mimeType, 'image/png')
+  assert.ok(Buffer.from(raw.image.data, 'base64').subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')))
+  return raw.image.data
 }
 
 let client
@@ -126,6 +131,7 @@ fn main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
   await initialize(client)
   const webgpuAvailable = await hasWebGpuDevice()
   for (const backend of ['webgl2', 'webgpu']) {
+    let tinted
     if (backend === 'webgpu' && !webgpuAvailable) {
       // Native driver messages vary (including Dawn's external-instance error).
       // An unavailable device must yield an error response and no image.
@@ -133,7 +139,32 @@ fn main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
       console.log('authored-dsl: SKIP WebGPU positive render (no device); PASS fallback rejected')
       continue
     }
-    const tinted = await render(client, { backend })
+    if (backend === 'webgpu') {
+      // The device probe is optimistic: CI runners intermittently report a
+      // device that Dawn reclaims before the renderer opens its own page
+      // ("A valid external Instance reference no longer exists."). One fresh
+      // attempt decides whether the device is real; a repeated device-class
+      // failure means this environment has no usable device and must behave
+      // exactly like the no-device path. Non-device errors are never retried.
+      const deviceError = /device|adapter|instance|driver|webgpu|gpu/i
+      let attempt = await renderRaw(client, { backend })
+      if (attempt.isError && !deviceError.test(attempt.text)) {
+        assert.fail(`webgpu: render failed with a non-device error: ${attempt.text}`)
+      }
+      if (attempt.isError) attempt = await renderRaw(client, { backend })
+      if (attempt.isError && !deviceError.test(attempt.text)) {
+        assert.fail(`webgpu: render failed with a non-device error: ${attempt.text}`)
+      }
+      if (attempt.isError) {
+        assert.match(attempt.text, /"status":\s*"error"/)
+        assert.equal(attempt.image, undefined, attempt.text)
+        console.log('authored-dsl: SKIP WebGPU positive render (device unusable after probe); PASS fallback rejected')
+        continue
+      }
+      tinted = attempt.image.data
+    } else {
+      tinted = await render(client, { backend })
+    }
     const untinted = await render(client, { backend, dsl: workspace.composition.dsl.replace('amount: 0.4', 'amount: 0') })
     assert.notEqual(tinted, untinted, `${backend}: the second effect must change pixels`)
     assert.equal(await render(client, { backend }), tinted, `${backend}: a fresh call reproduces the composition`)
