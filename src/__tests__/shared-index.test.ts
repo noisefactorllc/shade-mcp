@@ -84,6 +84,41 @@ describe('shared effect index', () => {
     expect(await getSharedEffectIndex()).not.toBe(built)
   })
 
+  it('does not cache a build that finishes after invalidation', async () => {
+    const { EffectIndex } = await import('../knowledge/effect-index.js')
+    const { getSharedEffectIndex, invalidateSharedEffectIndex } =
+      await import('../knowledge/shared-instances.js')
+
+    let scanned!: () => void
+    const scanDone = new Promise<void>(resolve => { scanned = resolve })
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const realInit = EffectIndex.prototype.initialize
+    vi.spyOn(EffectIndex.prototype, 'initialize').mockImplementationOnce(
+      async function (this: InstanceType<typeof EffectIndex>, dir: string) {
+        await realInit.call(this, dir)
+        scanned()
+        await gate
+      },
+    )
+
+    const stale = getSharedEffectIndex()
+    await scanDone
+
+    writeEffect('filter/blur')
+    invalidateSharedEffectIndex()
+    release()
+
+    // The stale build finishes here, before any lookup follows the
+    // invalidation: it must publish nothing into the cache.
+    const built = await stale
+    expect(built.list()).toHaveLength(1)
+
+    const fresh = await getSharedEffectIndex()
+    expect(fresh.list()).toHaveLength(2)
+    expect(fresh).not.toBe(built)
+  })
+
   it('rebuilds immediately when invalidated', async () => {
     const { getSharedEffectIndex, invalidateSharedEffectIndex } =
       await import('../knowledge/shared-instances.js')

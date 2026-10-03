@@ -30,9 +30,10 @@ export async function getSharedEffectIndex(): Promise<EffectIndex> {
   building = (async () => {
     const index = new EffectIndex()
     await index.initialize(getConfig().effectsDir)
-    // If invalidation happened while scanning, this index is already stale;
-    // a newer build owns the cache, so leave it alone.
-    if (buildEpoch === current) {
+    // Publish only while this build's epoch is still current: if
+    // invalidation happened while scanning — even before any newer build
+    // started — this index is already stale and must not enter the cache.
+    if (epoch === current) {
       effectIndex = index
       builtAt = Date.now()
     }
