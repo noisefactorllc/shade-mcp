@@ -37,6 +37,7 @@ function makeSession() {
 
 describe('browser session lifecycle', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     resetBrowserQueue()
     while (getRefCount() > 0) releaseServer()
     mkdirSync(tmpDir, { recursive: true })
