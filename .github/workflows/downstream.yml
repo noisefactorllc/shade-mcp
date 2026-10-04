@@ -13,6 +13,8 @@ on:
       - 'docs/**'
     branches: [main]
 
+permissions: {}
+
 jobs:
   notify:
     runs-on: ubuntu-latest
