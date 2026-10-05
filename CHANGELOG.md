@@ -3,7 +3,14 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.2] — 2026-10-04
+
+### Changed
+
+- Workflows declare least-privilege token permissions. Runtime behavior and
+  tool results are unchanged from 0.3.1.
+
+## [0.3.1] — 2026-10-02
 
 ### Changed
 
@@ -42,10 +49,6 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   measured difference (`similarity`) and the consumed `inputTexture`. The
   capture reads through the backend's `readPixels` on both WebGL2 and
   WebGPU. The result no longer includes `temporalDiff` or `uniqueColors`.
-
-## [0.3.1] — 2026-10-02
-
-### Changed
 
 - **`testUniformResponsiveness` no longer reports `ok` while uniforms fail.**
   The overall status used to be `ok` as soon as any single uniform moved the
