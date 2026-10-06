@@ -1,6 +1,10 @@
 # Contributing
 
-Issues and pull requests are welcome.
+Contributions follow the Noise Factor
+[contributing policy](https://github.com/noisefactorllc/.github/blob/main/CONTRIBUTING.md) and
+[Code of Conduct](https://github.com/noisefactorllc/.github/blob/main/CODE_OF_CONDUCT.md). The policy covers which pull requests we
+accept and what LLM-assisted pull requests need to include. This page adds
+what's specific to shade-mcp.
 
 ## Getting set up
 
