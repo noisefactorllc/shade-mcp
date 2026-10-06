@@ -27,7 +27,10 @@ const FAIL_STATUSES = new Set(['mismatch', 'passthrough', 'divergent', 'fail', '
 export function classifyOutcome(entry: unknown): Outcome {
   if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return 'ok'
   const e = entry as { status?: unknown; error?: unknown; meets_target?: unknown }
-  if (e.status === 'error' || typeof e.error === 'string') return 'error'
+  // A tool-set status is authoritative. An `error` string decides only for
+  // payloads that carry no status (`{ error }`), so a field merged in from
+  // AI output cannot turn a verdict into an error.
+  if (e.status === 'error' || (e.status === undefined && typeof e.error === 'string')) return 'error'
   if (typeof e.status === 'string' && FAIL_STATUSES.has(e.status)) return 'fail'
   if (e.meets_target === false) return 'fail'
   if (e.status === 'warning') return 'warning'
@@ -37,7 +40,10 @@ export function classifyOutcome(entry: unknown): Outcome {
 
 function withOutcome(entry: unknown): unknown {
   if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return entry
-  return { outcome: classifyOutcome(entry), ...(entry as object) }
+  // The computed outcome always wins over an `outcome` key in the payload
+  // (for example one merged in from AI output).
+  const { outcome: _ignored, ...fields } = entry as Record<string, unknown>
+  return { outcome: classifyOutcome(entry), ...fields }
 }
 
 /**

@@ -3,6 +3,25 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] — 2026-10-06
+
+### Fixed
+
+- **A uniform that does not affect output is a `fail`, not an `error`.**
+  `testUniformResponsiveness` reported a measured but unresponsive uniform
+  with `status: "error"`, so the 0.4.0 envelope turned a negative verdict
+  into `outcome: "error"` with `isError`. It now returns `status: "fail"`
+  (`outcome: "fail"`, no `isError`); `error` is kept for uniforms that could
+  not be measured.
+- **The computed `outcome` cannot be overridden by the payload.** An
+  `outcome` key in a result (for example AI JSON that `analyzeBranching`
+  merges into its result) replaced the computed one, and an AI-supplied
+  `error` string turned any result into an error. The computed outcome now
+  always wins, and an `error` string decides the outcome only for payloads
+  that carry no `status`.
+- The README states that input-schema validation errors are plain text from
+  the MCP SDK and gives the exact batch outcome rule.
+
 ## [0.4.1] — 2026-10-06
 
 ### Fixed

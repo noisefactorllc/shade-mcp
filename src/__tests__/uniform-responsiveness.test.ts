@@ -115,10 +115,12 @@ describe('testUniformResponsiveness result contract', () => {
     const result = await testUniformResponsiveness(session, 'synth/noise')
 
     expect(result.status).not.toBe('ok')
-    expect(result.status).toBe('error')
+    expect(result.status).toBe('fail')
     expect(result.details).toContain('unused')
-    // A caller gating on isError must now see the dead control.
-    expect(toolResult(result).isError).toBe(true)
+    // A dead control is a negative verdict: the common outcome is fail, and
+    // the call itself succeeded, so it is not an MCP isError.
+    expect(JSON.parse(toolResult(result).content[0].text).outcome).toBe('fail')
+    expect(toolResult(result).isError).toBeUndefined()
     // The measured deltas and the threshold are reported, not just pass/fail.
     expect(result.threshold).toBe(0.002)
     expect(result.threshold).toBe(UNIFORM_RESPONSE_THRESHOLD)

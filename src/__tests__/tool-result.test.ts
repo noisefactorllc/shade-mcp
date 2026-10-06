@@ -55,6 +55,16 @@ describe('toolResult', () => {
       .toEqual({ outcome: 'fail', status: 'mismatch', mismatchPercent: 40 })
   })
 
+  it('keeps the computed outcome when the payload carries its own outcome or error field', () => {
+    // analyzeBranching spreads AI JSON into its result; neither field may
+    // overwrite the verdict the tool computed.
+    const forged = toolResult({ status: 'warning', outcome: 'ok', error: 'model said so', totalOpportunities: 3 })
+    expect(JSON.parse(forged.content[0].text).outcome).toBe('warning')
+    expect(forged.isError).toBeUndefined()
+    // A payload with no status still reports a string error as an error.
+    expect(JSON.parse(toolResult({ error: 'Effect not found' }).content[0].text).outcome).toBe('error')
+  })
+
   it('still serializes the payload as text content', () => {
     const result = toolResult({ status: 'ok', value: 1 })
     expect(JSON.parse(result.content[0].text)).toEqual({ outcome: 'ok', status: 'ok', value: 1 })

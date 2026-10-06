@@ -161,22 +161,29 @@ In `~/.codeium/windsurf/mcp_config.json`:
 
 ### Result envelope
 
-Every tool returns JSON text in one envelope.
+Every tool returns JSON text in one envelope. The one exception is an
+argument that fails the tool's input schema: the MCP SDK rejects it before
+the tool runs, as a plain-text `isError` result.
 
-- A single result carries a top-level `outcome`: `ok` (the check passed or
-  the query answered), `fail` (the check ran and its verdict is negative:
-  a parity `mismatch`, a `passthrough` filter, `divergent` algorithms,
-  `meets_target: false`), `warning` (findings to review), `skipped`
-  (nothing was testable) or `error` (no verdict). Verb-specific fields such
-  as `status` and `mismatchPercent` are kept beside it.
+- A single result carries a top-level `outcome`, computed from the tool's
+  own `status`: `ok` (the check passed or the query answered), `fail` (the
+  check ran and its verdict is negative: a parity `mismatch`, a
+  `passthrough` filter, `divergent` algorithms, a uniform that did not
+  affect output, `meets_target: false`), `warning` (findings to review),
+  `skipped` (nothing was testable) or `error` (no verdict). A payload with
+  no `status` is `error` when it carries an `error` string. An `outcome`
+  key inside the payload never overrides the computed one. Verb-specific
+  fields such as `status` and `mismatchPercent` are kept beside it.
 - A batch (several effects in one call) is
-  `{ outcome, summary, results }`. Each entry carries its own `outcome`,
-  `summary` counts entries per outcome, and the batch `outcome` is `error`
-  when every entry is an error, otherwise the worst entry outcome.
+  `{ outcome, summary, results }`. Each entry carries its own `outcome` and
+  `summary` counts entries per outcome. The batch `outcome` is `error` when
+  every entry is an error, `fail` when any entry is `fail` or `error`,
+  `warning` when any entry is `warning`, `skipped` when every entry is
+  skipped, and `ok` otherwise.
 - MCP `isError` is set when the call failed as a whole: a single `error`
   result, or a batch in which every entry is an `error`. A `fail` verdict is
   a successful call and does not set `isError`.
-- Errors raised before a tool reaches its own handling, such as an
+- Errors raised inside a tool before it reaches its own handling, such as an
   unresolvable effect selector, arrive in the same envelope:
   `{ "outcome": "error", "status": "error", "error": "..." }`.
 

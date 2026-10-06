@@ -221,7 +221,10 @@ export async function testUniformResponsiveness(
         if (errorNames.length > 0) problems.push(`could not be measured: ${errorNames.join(', ')}`)
         if (failedNames.length > 0) problems.push(`did not affect output: ${failedNames.join(', ')}`)
         if (problems.length > 0) {
-          status = 'error'
+          // A uniform that was measured and did not move the output is a
+          // negative verdict (fail); one that could not be measured leaves
+          // the check without a verdict (error).
+          status = errorNames.length > 0 ? 'error' : 'fail'
           details = `Uniforms ${problems.join('; ')}`
         } else {
           status = 'ok'
@@ -259,7 +262,7 @@ export function registerTestUniformResponsiveness(server: McpServer): void {
     'testUniformResponsiveness',
     'For each uniform:\n1. Render a baseline.\n2. Change the uniform value.\n3. Compare the output.\n' +
         'Status is ok only when at least one uniform was tested and every tested uniform affected output; ' +
-        'error when any tested uniform did not respond or could not be measured (details names them); ' +
+        'fail when a measured uniform did not affect output, error when any tested uniform could not be measured (details names them); ' +
         'skipped when nothing was testable. Each tested uniform is reported with its test value, luma and ' +
         'max channel deltas against the 0.002 threshold.',
     testUniformResponsivenessSchema,
