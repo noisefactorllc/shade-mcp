@@ -13,10 +13,12 @@ import { getRefCount, releaseServer } from '../harness/server-manager.js'
 
 type Shade = (values: Record<string, any>, time: number, pixel: number) => number
 
-function installFakeViewer(globals: ViewerGlobals, specs: Record<string, any>, shade: Shade, alpha?: (values: Record<string, any>) => number): void {
+function installFakeViewer(globals: ViewerGlobals, specs: Record<string, any>, shade: Shade, alpha?: (values: Record<string, any>) => number,
+  enums: Record<string, number> = {}): void {
   const w: any = {}
   const values: Record<string, any> = {}
-  for (const spec of Object.values(specs) as any[]) if (spec.uniform) values[spec.uniform] = spec.default ?? spec.min
+  const convert = (value: any) => (typeof value === 'string' && value in enums ? enums[value] : value)
+  for (const spec of Object.values(specs) as any[]) if (spec.uniform) values[spec.uniform] = convert(spec.default ?? spec.min)
   let time = 0
   w[globals.renderingPipeline] = {
     backend: {
@@ -38,7 +40,11 @@ function installFakeViewer(globals: ViewerGlobals, specs: Record<string, any>, s
   }
   w[globals.currentEffect] = { namespace: 'synth', name: 'noise', instance: { globals: specs } }
   w[globals.pipelineGeneration!] = 0
-  w[globals.canvasRenderer] = { canvas: { width: 2, height: 2 }, render: (t: number) => { time = t } }
+  w[globals.canvasRenderer] = {
+    canvas: { width: 2, height: 2 },
+    render: (t: number) => { time = t },
+    convertParameterForUniform: (value: any) => convert(value),
+  }
   ;(globalThis as any).window = w
   ;(globalThis as any).document = {
     getElementById: (id: string) => id === 'effect-select'
@@ -144,6 +150,49 @@ describe('testUniformResponsiveness: controls inert at defaults', () => {
     installFakeViewer(DEFAULT_GLOBALS, specs, () => 0.5, (v) => v.u_bgAlpha)
     const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
     expect(result.status).toBe('ok')
+  })
+
+  it('opens a threshold gate far enough for the gated control to show', async () => {
+    // Like glitch's xChonk: its effect scales with glitchiness, so just past
+    // the gate's threshold it is too small to measure.
+    const specs = {
+      glitchiness: { uniform: 'u_glitch', type: 'float', min: 0, max: 100, default: 0 },
+      xChonk: { uniform: 'u_x', type: 'int', min: 1, max: 100, default: 1, ui: { enabledBy: { param: 'glitchiness', gt: 0 } } },
+    }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v) => 0.2 + (v.u_glitch / 100) * 0.3 + (v.u_glitch / 100) * (v.u_x / 100) * 0.05)
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    const x = result.uniforms.find((u: any) => u.name === 'xChonk')
+    expect(x.responds).toBe(true)
+    expect(x.enabled_with).toEqual({ glitchiness: 50 })
+  })
+
+  it('opens a gate on a member enum with the enum value it names', async () => {
+    const specs = {
+      oscType: { uniform: 'u_osc', type: 'member', enum: 'oscType', default: 'oscType.sine' },
+      seed: { uniform: 'u_seed', type: 'int', min: 1, max: 100, default: 1,
+        ui: { enabledBy: { param: 'oscType', in: ['oscType.noise1d', 'oscType.noise2d'] } } },
+    }
+    const enums = { 'oscType.sine': 0, 'oscType.noise1d': 3, 'oscType.noise2d': 4 }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v) => (v.u_osc === 3 ? 0.2 + 0.5 * v.u_seed / 100 : 0.2), undefined, enums)
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    const seed = result.uniforms.find((u: any) => u.name === 'seed')
+    expect(seed.responds).toBe(true)
+    expect(seed.enabled_with).toEqual({ oscType: 'oscType.noise1d' })
+  })
+
+  it('opens a gate that needs a vector to differ from a neutral value', async () => {
+    const neutral = [0.5, 0.5, 0.5]
+    const specs = {
+      tint: { uniform: 'u_tint', type: 'vec3', default: neutral },
+      balance: { uniform: 'u_balance', type: 'float', min: -1, max: 1, default: 0,
+        ui: { enabledBy: { param: 'tint', neq: neutral } } },
+    }
+    const tinted = (t: number[]) => t.some((c, i) => Math.abs(c - neutral[i]) > 1e-4)
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v) => 0.4 + (tinted(v.u_tint) ? 0.3 * v.u_balance : 0))
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    const balance = result.uniforms.find((u: any) => u.name === 'balance')
+    expect(balance.responds).toBe(true)
+    expect(balance.enabled_with.tint).toEqual([0.75, 0.75, 0.75])
   })
 
   it('still fails a control that is ungated and never moves the output', async () => {

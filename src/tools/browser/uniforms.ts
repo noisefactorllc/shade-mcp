@@ -169,6 +169,19 @@ export async function testUniformResponsiveness(
         else if (pipeline.globalUniforms) pipeline.globalUniforms[uniformName] = value
       }
       const defaultOf = (spec: any) => spec.default ?? spec.min
+      // Values compare as the noisemaker UI compares them: vectors per
+      // component, numbers within 1e-4.
+      const same = (a: any, b: any): boolean => {
+        if (a === b) return true
+        if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((v: number, i: number) => Math.abs(v - b[i]) < 1e-4)
+        return typeof a === 'number' && typeof b === 'number' && Math.abs(a - b) < 1e-4
+      }
+      // A parameter value as its uniform takes it: member enums are stored as
+      // paths ("oscType.noise1d") and set as their numbers.
+      const toUniform = (spec: any, value: unknown) =>
+        typeof value === 'string' && typeof renderer?.convertParameterForUniform === 'function'
+          ? renderer.convertParameterForUniform(value, spec)
+          : value
 
       // enabledBy: the control only acts when this condition holds (the same
       // shape the noisemaker UI evaluates). Find runtime values for the
@@ -191,23 +204,35 @@ export async function testUniformResponsiveness(
         const lo = typeof gate.min === 'number' ? gate.min : (choices ? Math.min(...choices) : 0)
         const hi = typeof gate.max === 'number' ? gate.max : (choices ? Math.max(...choices) : 1)
         const step = gate.type === 'int' || choices ? 1 : (hi - lo) / 100
+        // A threshold gate opens halfway into its open range first: just past
+        // the threshold (glitchiness 1 of 100) the gated control often moves
+        // the output too little to measure.
+        const halfway = (from: number, to: number) => (gate.type === 'int' ? Math.round((from + to) / 2) : (from + to) / 2)
         const candidates: unknown[] = []
         if (cond.eq !== undefined) candidates.push(cond.eq)
         if (Array.isArray(cond.in)) candidates.push(...cond.in)
-        if (cond.gt !== undefined) candidates.push(cond.gt + step)
-        if (cond.gte !== undefined) candidates.push(cond.gte)
-        if (cond.lt !== undefined) candidates.push(cond.lt - step)
-        if (cond.lte !== undefined) candidates.push(cond.lte)
+        if (choices && [cond.gt, cond.gte, cond.lt, cond.lte].some((v) => v !== undefined)) candidates.push(...choices)
+        if (cond.gt !== undefined) candidates.push(halfway(cond.gt, hi), cond.gt + step)
+        if (cond.gte !== undefined) candidates.push(halfway(cond.gte, hi), cond.gte)
+        if (cond.lt !== undefined) candidates.push(halfway(cond.lt, lo), cond.lt - step)
+        if (cond.lte !== undefined) candidates.push(halfway(cond.lte, lo), cond.lte)
         if (cond.neq !== undefined || Array.isArray(cond.notIn)) {
-          const banned = new Set([...(cond.neq !== undefined ? [cond.neq] : []), ...(cond.notIn || [])])
-          for (const v of (choices ?? [defaultOf(gate), lo, hi])) if (!banned.has(v)) { candidates.push(v); break }
+          const banned = [...(cond.neq !== undefined ? [cond.neq] : []), ...(cond.notIn || [])]
+          const base = defaultOf(gate)
+          // A vector gate (a tint that must differ from neutral) opens with
+          // each component moved a quarter of the range toward the far end.
+          const options = Array.isArray(base)
+            ? [base.map((c: number) => c + (c <= (lo + hi) / 2 ? 1 : -1) * (hi - lo) / 4)]
+            : (choices ?? [base, lo, hi])
+          for (const v of options) if (!banned.some((b) => same(v, b))) { candidates.push(v); break }
         }
         if (candidates.length === 0) candidates.push(gate.type === 'boolean' ? true : hi)
         const holds = (v: any) =>
-          (cond.eq === undefined || v === cond.eq) && (cond.neq === undefined || v !== cond.neq) &&
+          (cond.eq === undefined || same(v, cond.eq)) && (cond.neq === undefined || !same(v, cond.neq)) &&
           (cond.gt === undefined || v > cond.gt) && (cond.gte === undefined || v >= cond.gte) &&
           (cond.lt === undefined || v < cond.lt) && (cond.lte === undefined || v <= cond.lte) &&
-          (!Array.isArray(cond.in) || cond.in.includes(v)) && (!Array.isArray(cond.notIn) || !cond.notIn.includes(v)) &&
+          (!Array.isArray(cond.in) || cond.in.some((c: any) => same(v, c))) &&
+          (!Array.isArray(cond.notIn) || !cond.notIn.some((c: any) => same(v, c))) &&
           (Object.keys(cond).some((k) => k !== 'param') || Boolean(v))
         const value = candidates.find(holds)
         if (value === undefined) return false
@@ -252,7 +277,7 @@ export async function testUniformResponsiveness(
             luma_diff: null, max_channel_diff: null, responds: null, gated: true, enabled_by: gate })
           continue
         }
-        for (const [param, value] of Object.entries(assign)) setValue(effectGlobals[param].uniform, value)
+        for (const [param, value] of Object.entries(assign)) setValue(effectGlobals[param].uniform, toUniform(effectGlobals[param], value))
         const gateValues = Object.keys(assign).length > 0 ? assign : null
 
         type Capture = Array<{ mean: number[]; samples: number[] }>
@@ -329,7 +354,7 @@ export async function testUniformResponsiveness(
 
         // Restore defaults, the gate params included.
         setValue(spec.uniform, defaultVal)
-        for (const param of Object.keys(assign)) setValue(effectGlobals[param].uniform, defaultOf(effectGlobals[param]))
+        for (const param of Object.keys(assign)) setValue(effectGlobals[param].uniform, toUniform(effectGlobals[param], defaultOf(effectGlobals[param])))
       }
 
       let status: string
