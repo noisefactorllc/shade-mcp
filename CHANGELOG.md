@@ -3,6 +3,18 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.7] — 2026-10-06
+
+### Fixed
+
+- **`testUniformResponsiveness` opens `enabledBy` gates as the noisemaker UI
+  evaluates them.** A threshold gate (`gt`, `gte`, `lt`, `lte`) opens halfway
+  into its open range first instead of just past the threshold, so a control
+  whose effect scales with its gate is measured at a visible strength. A gate
+  on a member enum sets the enum's value rather than its path string. Gate
+  values compare per component and within 1e-4, so a vector gate (a tint that
+  must differ from neutral) opens with a vector.
+
 ## [0.4.6] — 2026-10-06
 
 ### Changed
