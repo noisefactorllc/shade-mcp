@@ -140,11 +140,20 @@ export async function testUniformResponsiveness(
         for (let i = 0; i < pixels.length; i += 4) {
           sumR += pixels[i] / 255; sumG += pixels[i + 1] / 255; sumB += pixels[i + 2] / 255
         }
-        return [sumR / count, sumG / count, sumB / count]
+        // A strided sample of the pixels themselves: blur, scale, rotation and
+        // offset controls move pixels without changing the frame's mean color,
+        // so the comparison must also be per pixel.
+        const stride = Math.max(1, Math.floor(count / 4096))
+        const samples: number[] = []
+        for (let p = 0; p < count; p += stride) {
+          const i = p * 4
+          samples.push(pixels[i] / 255, pixels[i + 1] / 255, pixels[i + 2] / 255)
+        }
+        return { mean: [sumR / count, sumG / count, sumB / count], samples }
       }
 
       async function captureAll() {
-        const out: number[][] = []
+        const out: Array<{ mean: number[]; samples: number[] }> = []
         for (const t of CAPTURE_TIMES) {
           const m = await captureMetrics(t)
           if (!m) return null
@@ -221,8 +230,15 @@ export async function testUniformResponsiveness(
 
         const defaultVal = defaultOf(spec)
         const range = spec.max - spec.min
-        let testVal = defaultVal === spec.min ? spec.min + range * 0.75 : spec.min + range * 0.25
-        if (spec.type === 'int') testVal = Math.round(testVal)
+        // Two test values, never the default: the farther of the 25% and 75%
+        // points, then a point at 38.2% of the range, which does not line up
+        // with the right angles and halves a symmetric input is invariant to.
+        const round = (v: number) => (spec.type === 'int' ? Math.round(v) : v)
+        const quarter = round(spec.min + range * 0.25), threeQuarter = round(spec.min + range * 0.75)
+        const far = Math.abs(threeQuarter - defaultVal) > Math.abs(quarter - defaultVal) ? threeQuarter : quarter
+        const testValues = [far, round(spec.min + range * 0.381966)]
+          .filter((v, i, all) => v !== defaultVal && all.indexOf(v) === i)
+        let testVal = testValues[0] ?? far
 
         // Enable a gated control first; a gate that cannot be opened at run
         // time leaves the control untestable here, reported as gated.
@@ -238,27 +254,46 @@ export async function testUniformResponsiveness(
         for (const [param, value] of Object.entries(assign)) setValue(effectGlobals[param].uniform, value)
         const gateValues = Object.keys(assign).length > 0 ? assign : null
 
-        let reference: number[][] | null = baseline
-        let testMetrics: number[][] | null = null
+        type Capture = Array<{ mean: number[]; samples: number[] }>
+        const compare = (reference: Capture, test: Capture) => {
+          let luma = 0, channel = 0, pixel = 0
+          for (let i = 0; i < CAPTURE_TIMES.length; i++) {
+            const a = reference[i].mean, b = test[i].mean
+            luma = Math.max(luma, Math.abs((b[0] + b[1] + b[2]) / 3 - (a[0] + a[1] + a[2]) / 3))
+            channel = Math.max(channel, Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]), Math.abs(b[2] - a[2]))
+            const sa = reference[i].samples, sb = test[i].samples
+            if (sa.length === sb.length && sa.length > 0) {
+              let sum = 0
+              for (let k = 0; k < sa.length; k++) sum += Math.abs(sb[k] - sa[k])
+              pixel = Math.max(pixel, sum / sa.length)
+            }
+          }
+          return { luma, channel, pixel }
+        }
+
+        let reference: Capture | null = baseline
+        let measured: { luma: number; channel: number; pixel: number } | null = null
         let measureError: string | null = null
         try {
           if (gateValues) reference = await captureAll()
-          setValue(spec.uniform, testVal)
-          testMetrics = reference ? await captureAll() : null
+          for (const value of testValues) {
+            setValue(spec.uniform, value)
+            const test = reference ? await captureAll() : null
+            if (!test || !reference) { measured = null; break }
+            const d = compare(reference, test)
+            if (!measured || d.pixel + d.channel > measured.pixel + measured.channel) { measured = d; testVal = value }
+            // This function is serialized into the page: the threshold must
+            // stay a literal, kept in sync with UNIFORM_RESPONSE_THRESHOLD.
+            if (d.luma > 0.002 || d.channel > 0.002 || d.pixel > 0.002) break
+          }
         } catch (err) {
           measureError = err instanceof Error ? err.message : String(err)
+          measured = null
         }
 
-        if (testMetrics && reference) {
-          let lumaDiff = 0, maxChannelDiff = 0
-          for (let i = 0; i < CAPTURE_TIMES.length; i++) {
-            const a = reference[i], b = testMetrics[i]
-            lumaDiff = Math.max(lumaDiff, Math.abs((b[0] + b[1] + b[2]) / 3 - (a[0] + a[1] + a[2]) / 3))
-            maxChannelDiff = Math.max(maxChannelDiff, Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]), Math.abs(b[2] - a[2]))
-          }
-          // This function is serialized into the page: the threshold must stay
-          // a literal, kept in sync with UNIFORM_RESPONSE_THRESHOLD.
-          const responds = lumaDiff > 0.002 || maxChannelDiff > 0.002
+        if (measured) {
+          const lumaDiff = measured.luma, maxChannelDiff = measured.channel, pixelDiff = measured.pixel
+          const responds = lumaDiff > 0.002 || maxChannelDiff > 0.002 || pixelDiff > 0.002
           uniforms.push({
             name,
             uniform: spec.uniform,
@@ -266,6 +301,7 @@ export async function testUniformResponsiveness(
             test_value: testVal,
             luma_diff: lumaDiff,
             max_channel_diff: maxChannelDiff,
+            pixel_diff: pixelDiff,
             responds,
             ...(gateValues ? { enabled_with: gateValues } : {}),
           })

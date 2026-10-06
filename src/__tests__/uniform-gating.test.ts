@@ -11,7 +11,7 @@ import { getRefCount, releaseServer } from '../harness/server-manager.js'
 // grey level is computed by `shade(values, time)` from the current uniform
 // values and the render time.
 
-type Shade = (values: Record<string, any>, time: number) => number
+type Shade = (values: Record<string, any>, time: number, pixel: number) => number
 
 function installFakeViewer(globals: ViewerGlobals, specs: Record<string, any>, shade: Shade): void {
   const w: any = {}
@@ -23,8 +23,10 @@ function installFakeViewer(globals: ViewerGlobals, specs: Record<string, any>, s
       gl: {
         bindFramebuffer: () => {},
         readPixels: (_x: number, _y: number, _wd: number, _ht: number, _f: number, _t: number, out: Uint8Array) => {
-          const c = Math.max(0, Math.min(255, Math.round(shade(values, time) * 255)))
-          for (let i = 0; i < out.length; i += 4) { out[i] = c; out[i + 1] = c; out[i + 2] = c; out[i + 3] = 255 }
+          for (let i = 0; i < out.length; i += 4) {
+            const c = Math.max(0, Math.min(255, Math.round(shade(values, time, i / 4) * 255)))
+            out[i] = c; out[i + 1] = c; out[i + 2] = c; out[i + 3] = 255
+          }
         },
       },
       getName: () => 'webgl2',
@@ -106,6 +108,34 @@ describe('testUniformResponsiveness: controls inert at defaults', () => {
     expect(result.tested_uniforms).toEqual(expect.arrayContaining(['amount:pass', 'detail:gated']))
     expect(result.uniforms.find((u: any) => u.name === 'detail')).toMatchObject({ gated: true, responds: null })
     expect(result.details).toContain('gated')
+  })
+
+  it('counts a control that moves pixels without changing the mean color as responsive', async () => {
+    // An offset that shifts a two-tone pattern: the frame mean stays 0.5.
+    const specs = { offset: { uniform: 'u_offset', type: 'int', min: 0, max: 1, default: 0 } }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v, _t, px) => ((px + v.u_offset) % 2 === 0 ? 0 : 1))
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    expect(result.status).toBe('ok')
+    expect(result.uniforms[0].luma_diff).toBe(0)
+    expect(result.uniforms[0].pixel_diff).toBeGreaterThan(0.5)
+  })
+
+  it('never tests a control at its own default value', async () => {
+    // strength defaults to the 25% point of its range.
+    const specs = { strength: { uniform: 'u_strength', type: 'float', min: 0, max: 100, default: 25 } }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v) => v.u_strength / 100)
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    expect(result.status).toBe('ok')
+    expect(result.uniforms[0].test_value).not.toBe(25)
+  })
+
+  it('tries a second value when the input is symmetric under the first', async () => {
+    // A rotation over a pattern that looks the same at multiples of 90 degrees.
+    const specs = { rotation: { uniform: 'u_rotation', type: 'float', min: -180, max: 180, default: 0 } }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v) => (Math.abs(v.u_rotation) % 90 === 0 ? 0.5 : 0.8))
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    expect(result.status).toBe('ok')
+    expect(Math.abs(result.uniforms[0].test_value) % 90).not.toBe(0)
   })
 
   it('still fails a control that is ungated and never moves the output', async () => {

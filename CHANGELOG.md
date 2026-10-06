@@ -3,6 +3,21 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] — 2026-10-06
+
+### Fixed
+
+- **`testUniformResponsiveness` sees spatial controls and never tests a
+  default.** It compared only the frame's mean color, which blur, scale,
+  rotation, offset and warp controls leave unchanged, and it could pick a test
+  value equal to the control's default (noisemaker's `filter/bulge`
+  `strength` defaults to the 25% point it tested) or one a symmetric input is
+  invariant to (a 90-degree rotation of a checkerboard). It now also compares
+  a strided per-pixel sample (`pixel_diff`), and tries two values that are
+  never the default: the farther of the 25% and 75% points, then the 38.2%
+  point. Against noisemaker, `filter/blur`, `bulge`, `channel`, `celShading`,
+  `chrome`, `corrupt` and `classicNoisedeck/caustic` now pass.
+
 ## [0.4.4] — 2026-10-06
 
 ### Fixed
