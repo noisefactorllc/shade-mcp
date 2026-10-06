@@ -13,7 +13,7 @@ import { getRefCount, releaseServer } from '../harness/server-manager.js'
 
 type Shade = (values: Record<string, any>, time: number, pixel: number) => number
 
-function installFakeViewer(globals: ViewerGlobals, specs: Record<string, any>, shade: Shade): void {
+function installFakeViewer(globals: ViewerGlobals, specs: Record<string, any>, shade: Shade, alpha?: (values: Record<string, any>) => number): void {
   const w: any = {}
   const values: Record<string, any> = {}
   for (const spec of Object.values(specs) as any[]) if (spec.uniform) values[spec.uniform] = spec.default ?? spec.min
@@ -25,7 +25,8 @@ function installFakeViewer(globals: ViewerGlobals, specs: Record<string, any>, s
         readPixels: (_x: number, _y: number, _wd: number, _ht: number, _f: number, _t: number, out: Uint8Array) => {
           for (let i = 0; i < out.length; i += 4) {
             const c = Math.max(0, Math.min(255, Math.round(shade(values, time, i / 4) * 255)))
-            out[i] = c; out[i + 1] = c; out[i + 2] = c; out[i + 3] = 255
+            out[i] = c; out[i + 1] = c; out[i + 2] = c
+            out[i + 3] = alpha ? Math.round(alpha(values) * 255) : 255
           }
         },
       },
@@ -136,6 +137,13 @@ describe('testUniformResponsiveness: controls inert at defaults', () => {
     const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
     expect(result.status).toBe('ok')
     expect(Math.abs(result.uniforms[0].test_value) % 90).not.toBe(0)
+  })
+
+  it('counts a control that changes only alpha as responsive', async () => {
+    const specs = { bgAlpha: { uniform: 'u_bgAlpha', type: 'float', min: 0, max: 1, default: 1 } }
+    installFakeViewer(DEFAULT_GLOBALS, specs, () => 0.5, (v) => v.u_bgAlpha)
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    expect(result.status).toBe('ok')
   })
 
   it('still fails a control that is ungated and never moves the output', async () => {

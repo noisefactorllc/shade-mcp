@@ -136,20 +136,21 @@ export async function testUniformResponsiveness(
         if (!read) return null
         const { pixels, width, height } = read
         const count = width * height
-        let sumR = 0, sumG = 0, sumB = 0
+        let sumR = 0, sumG = 0, sumB = 0, sumA = 0
         for (let i = 0; i < pixels.length; i += 4) {
-          sumR += pixels[i] / 255; sumG += pixels[i + 1] / 255; sumB += pixels[i + 2] / 255
+          sumR += pixels[i] / 255; sumG += pixels[i + 1] / 255; sumB += pixels[i + 2] / 255; sumA += pixels[i + 3] / 255
         }
         // A strided sample of the pixels themselves: blur, scale, rotation and
         // offset controls move pixels without changing the frame's mean color,
-        // so the comparison must also be per pixel.
+        // so the comparison must also be per pixel. Alpha is included: a
+        // background-alpha control changes nothing else.
         const stride = Math.max(1, Math.floor(count / 4096))
         const samples: number[] = []
         for (let p = 0; p < count; p += stride) {
           const i = p * 4
-          samples.push(pixels[i] / 255, pixels[i + 1] / 255, pixels[i + 2] / 255)
+          samples.push(pixels[i] / 255, pixels[i + 1] / 255, pixels[i + 2] / 255, pixels[i + 3] / 255)
         }
-        return { mean: [sumR / count, sumG / count, sumB / count], samples }
+        return { mean: [sumR / count, sumG / count, sumB / count, sumA / count], samples }
       }
 
       async function captureAll() {
@@ -260,7 +261,7 @@ export async function testUniformResponsiveness(
           for (let i = 0; i < CAPTURE_TIMES.length; i++) {
             const a = reference[i].mean, b = test[i].mean
             luma = Math.max(luma, Math.abs((b[0] + b[1] + b[2]) / 3 - (a[0] + a[1] + a[2]) / 3))
-            channel = Math.max(channel, Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]), Math.abs(b[2] - a[2]))
+            channel = Math.max(channel, Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]), Math.abs(b[2] - a[2]), Math.abs(b[3] - a[3]))
             const sa = reference[i].samples, sb = test[i].samples
             if (sa.length === sb.length && sa.length > 0) {
               let sum = 0
