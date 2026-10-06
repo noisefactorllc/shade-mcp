@@ -27,7 +27,7 @@
 // Usage:
 //   node scripts/check-dist-selfcontained.mjs            # checks dist/
 //   node scripts/check-dist-selfcontained.mjs <dir>      # checks an extracted drop
-import { cpSync, rmSync, mkdirSync, existsSync, readFileSync } from 'node:fs'
+import { readdirSync, readlinkSync, rmSync, mkdirSync, existsSync, readFileSync, copyFileSync, symlinkSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
@@ -39,6 +39,25 @@ const label = process.argv[2] ? source : 'dist'
 const stage = join(root, '.dist-selfcheck')
 const drop = join(stage, 'shade-mcp')
 
+// A recursive copy in plain JS rather than fs.cpSync(..., { recursive: true }):
+// Node ≥26's native cpSyncCopyDir fails with EACCES on some filesystems
+// (observed on overlayfs) where every other fs call succeeds. Same result,
+// portable across Node versions and mount types.
+function copyTree(src, dest) {
+  mkdirSync(dest, { recursive: true })
+  for (const entry of readdirSync(src, { withFileTypes: true })) {
+    const from = join(src, entry.name)
+    const to = join(dest, entry.name)
+    if (entry.isDirectory()) {
+      copyTree(from, to)
+    } else if (entry.isSymbolicLink()) {
+      symlinkSync(readlinkSync(from), to)
+    } else {
+      copyFileSync(from, to)
+    }
+  }
+}
+
 if (!existsSync(join(source, 'index.js'))) {
   console.error(`check-dist-selfcontained: ${label}/index.js is missing — build first, or point at an extracted drop`)
   process.exit(2)
@@ -49,7 +68,7 @@ if (!existsSync(join(source, 'index.js'))) {
 // resolves them from its own.
 rmSync(stage, { recursive: true, force: true })
 mkdirSync(stage, { recursive: true })
-cpSync(source, drop, { recursive: true })
+copyTree(source, drop)
 
 const request = JSON.stringify({
   jsonrpc: '2.0',

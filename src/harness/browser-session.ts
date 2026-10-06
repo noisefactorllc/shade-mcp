@@ -377,7 +377,16 @@ export class BrowserSession {
       // render on machines with a real GL stack.
       if (this.options.backend === 'webgpu' && swiftshaderEnabled()) {
         const env = swiftshaderVulkanEnv()
-        if (Object.keys(env).length > 0) launchOptions.env = env
+        if (Object.keys(env).length > 0) {
+          // Merge the ICD variables over the runner's environment instead of
+          // replacing it: a sandboxed runner that reaches the web only through
+          // a filtering proxy loses HTTP(S)_PROXY/NO_PROXY on replacement, and
+          // the viewer page's CDN imports then fail with ERR_NAME_NOT_RESOLVED
+          // before the renderer global ever appears.
+          launchOptions.env = Object.fromEntries(
+            Object.entries({ ...process.env, ...env }).filter((entry): entry is [string, string] =>
+              typeof entry[1] === 'string'))
+        }
       }
       this.browser = await chromium.launch(launchOptions)
 

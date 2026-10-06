@@ -123,6 +123,9 @@ describe('browser session lifecycle', () => {
     mkdirSync(bundleDir, { recursive: true })
     writeFileSync(resolve(bundleDir, 'vk_swiftshader_icd.json'), '{}')
     vi.stubEnv('SHADE_SWIFTSHADER', '1')
+    // A sandboxed runner reaches the web through a filtering proxy carried in
+    // its environment; the merged launch env must keep it.
+    vi.stubEnv('HTTPS_PROXY', 'http://proxy.test:3128')
     const session = new BrowserSession({ backend: 'webgpu', headless: true,
       viewerPort: 0, viewerRoot: tmpDir, effectsDir: tmpEffects })
     await expect(session.setup()).rejects.toThrow('launch failed')
@@ -130,6 +133,7 @@ describe('browser session lifecycle', () => {
     expect(env?.VK_DRIVER_FILES).toBe(resolve(bundleDir, 'vk_swiftshader_icd.json'))
     expect(env?.VK_ICD_FILENAMES).toBe(resolve(bundleDir, 'vk_swiftshader_icd.json'))
     expect(env?.LD_LIBRARY_PATH).toContain(bundleDir)
+    expect(env?.HTTPS_PROXY).toBe('http://proxy.test:3128')
     vi.unstubAllEnvs()
   })
 

@@ -1,8 +1,8 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { acquireServer, releaseServer, getServerUrl, getRefCount } from '../harness/server-manager.js'
 import { resolve } from 'node:path'
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
-import { connect } from 'node:net'
+import { connect, createServer as createNetServer } from 'node:net'
 
 /** Sends a request with a literal path, bypassing client-side URL normalization. */
 function rawGet(port: number, rawPath: string): Promise<string> {
@@ -59,6 +59,41 @@ describe('server-manager', () => {
       expect(res.ok).toBe(true)
       const text = await res.text()
       expect(text).toContain('<h1>test</h1>')
+    })
+
+    it('falls through the bind candidate chain when the requested bind fails', async () => {
+      mkdirSync(tmpDir, { recursive: true })
+      writeFileSync(resolve(tmpDir, 'index.html'), '<h1>test</h1>')
+      mkdirSync(tmpEffects, { recursive: true })
+
+      // Hold the chain's first fixed candidate so the requested bind fails and
+      // the server must serve through the fallthrough — exactly what a
+      // co-resident process does to the chain in a restricted runner, where
+      // an ephemeral listen(0) is refused with EPERM and only fixed ports
+      // bind. Hold a fixed port too: an ephemeral held socket would itself
+      // fail EPERM there, uncaught, before the chain is ever exercised.
+      const held = createNetServer((socket) => socket.destroy())
+      const heldReady = new Promise<void>((resolveHold, rejectHold) => {
+        held.once('error', rejectHold)
+        held.listen(43117, '127.0.0.1', () => resolveHold())
+      })
+      await heldReady
+      held.on('error', () => {})
+
+      vi.stubEnv('NM_TS_PORT', '43117')
+      try {
+        const url = await acquireServer(0, tmpDir, tmpEffects)
+        expect(url).not.toBe('http://127.0.0.1:43117')
+        const res = await fetch(`${url}/index.html`)
+        expect(res.ok).toBe(true)
+        expect(await res.text()).toContain('<h1>test</h1>')
+      } finally {
+        vi.unstubAllEnvs()
+        // Drain the held socket's close fully so the next test's acquire
+        // never re-binds a port whose previous listener is still tearing
+        // down — the exact reset the traversal canary below catches.
+        await new Promise<void>((resolveHold) => held.close(() => resolveHold()))
+      }
     })
 
     it('serves effects dir at /effects/', async () => {

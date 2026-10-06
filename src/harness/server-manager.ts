@@ -6,6 +6,12 @@ let httpServer: Server | null = null
 let refCount = 0
 let activePort = 0
 let requestedPort = 0
+let fixedFallbackCursor = 0
+// Resolves when the last released server has fully drained. Binding a new
+// server to a port whose previous listener is still tearing down resets the
+// next connection (the reason these tests used ephemeral ports), so an
+// acquire after a release waits for the drain first.
+let lastReleaseDrain: Promise<void> | null = null
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html',
@@ -129,6 +135,12 @@ export async function acquireServer(
   }
   requestedPort = port
 
+  if (lastReleaseDrain) {
+    const drain = lastReleaseDrain
+    lastReleaseDrain = null
+    await drain
+  }
+
   // Detect flat layout (effectsDir itself contains definition.json/js)
   const isFlatLayout = existsSync(join(effectsDir, 'definition.json')) || existsSync(join(effectsDir, 'definition.js'))
   const flatEffectName = isFlatLayout ? basename(effectsDir) : null
@@ -186,28 +198,71 @@ export async function acquireServer(
     serveFile(filePath, res, corsOrigin)
   }
 
-  httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
-    try {
-      route(req, res)
-    } catch {
-      if (!res.headersSent) res.writeHead(500)
-      res.end()
-    }
-  })
+  const createHttpServer = (): Server => {
+    const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+      try {
+        route(req, res)
+      } catch {
+        if (!res.headersSent) res.writeHead(500)
+        res.end()
+      }
+    })
+    // Malformed HTTP framing must not surface as an uncaught exception either.
+    server.on('clientError', (_err, socket) => {
+      if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n')
+      else socket.destroy()
+    })
+    return server
+  }
 
-  // Malformed HTTP framing must not surface as an uncaught exception either.
-  httpServer.on('clientError', (_err, socket) => {
-    if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n')
-    else socket.destroy()
-  })
+  // Restricted runners (supervisor verification sandboxes, the macOS host
+  // broker) refuse an ephemeral listen(0) on loopback with EPERM while
+  // permitting explicit fixed ports. Bind through a candidate chain instead of
+  // failing the whole acquisition: an NM_TS_PORT override first, then the
+  // requested port, then a small fixed range — each attempt on a fresh server
+  // with a one-shot error handler that closes and moves on, rejecting only
+  // after every candidate fails. An explicitly requested nonzero port keeps
+  // the old single-attempt semantics: it either binds or surfaces its error.
+  const FIXED_FALLBACK_PORTS = [43117, 43118, 43119, 43120, 43121, 43122, 43123, 43124, 43125, 43126]
+  const candidates: number[] = []
+  if (port === 0) {
+    const override = Number.parseInt(process.env.NM_TS_PORT ?? '', 10)
+    if (Number.isInteger(override) && override > 0 && override <= 65535) candidates.push(override)
+    // Rotate the fallback range so sequential acquires in the same process do
+    // not all hammer the same port: a test suite that releases and re-acquires
+    // per test would otherwise re-bind the first range port every time, right
+    // after the previous socket's teardown.
+    candidates.push(0)
+    for (let i = 0; i < FIXED_FALLBACK_PORTS.length; i++) {
+      candidates.push(FIXED_FALLBACK_PORTS[(fixedFallbackCursor + i) % FIXED_FALLBACK_PORTS.length])
+    }
+    fixedFallbackCursor = (fixedFallbackCursor + 1) % FIXED_FALLBACK_PORTS.length
+  } else {
+    candidates.push(port)
+  }
 
   await new Promise<void>((resolve, reject) => {
-    httpServer!.listen(port, '127.0.0.1', () => {
-      const addr = httpServer!.address()
-      activePort = typeof addr === 'object' && addr ? addr.port : port
-      resolve()
-    })
-    httpServer!.on('error', reject)
+    const attempt = (index: number, lastError?: Error): void => {
+      if (index >= candidates.length) {
+        reject(lastError ?? new Error(`Could not bind the viewer server on any candidate port (${candidates.join(', ')})`))
+        return
+      }
+      const candidate = candidates[index]
+      const server = createHttpServer()
+      const onError = (err: Error): void => {
+        server.close()
+        attempt(index + 1, err)
+      }
+      server.once('error', onError)
+      server.listen(candidate, '127.0.0.1', () => {
+        server.removeListener('error', onError)
+        httpServer = server
+        const addr = server.address()
+        activePort = typeof addr === 'object' && addr ? addr.port : candidate
+        resolve()
+      })
+    }
+    attempt(0)
   })
 
   refCount = 1
@@ -218,10 +273,11 @@ export function releaseServer(): void {
   if (refCount <= 0) return
   refCount--
   if (refCount === 0 && httpServer) {
-    httpServer.close()
+    const server = httpServer
     httpServer = null
     activePort = 0
     requestedPort = 0
+    lastReleaseDrain = new Promise<void>((resolve) => server.close(() => resolve()))
   }
 }
 
