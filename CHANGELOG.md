@@ -19,6 +19,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `error` string turned any result into an error. The computed outcome now
   always wins, and an `error` string decides the outcome only for payloads
   that carry no `status`.
+- **`renderEffectFrame`, `testUniformResponsiveness` and `testPixelParity`
+  read the half of the render surface the last frame presented.** On
+  WebGPU they read `global_<surface>_read`, which after the ping-pong swap
+  can be the stale half; `testNoPassthrough` already preferred
+  `pipeline.frameReadTextures`. All four now read that half first.
 - The README states that input-schema validation errors are plain text from
   the MCP SDK and gives the exact batch outcome rule.
 

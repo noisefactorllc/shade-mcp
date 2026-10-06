@@ -96,7 +96,13 @@ export async function testUniformResponsiveness(
           await backend.device?.queue?.onSubmittedWorkDone?.()
           const surf = pipeline.graph?.renderSurface
           if (!surf) return null
-          const candidates = ['global_' + surf + '_read']
+          // Prefer the half of the surface's ping-pong pair the last frame
+          // presented (frameReadTextures); a fixed global_<surface>_read
+          // guess can pick the stale half after the swap.
+          const candidates: string[] = []
+          const frameRead = pipeline.frameReadTextures?.get?.(surf)
+          if (frameRead) candidates.push(frameRead)
+          candidates.push('global_' + surf + '_read')
           try {
             const nodes: string[] = []
             for (const k of backend.textures.keys()) if (/node_\d+_out/.test(k)) nodes.push(k)

@@ -272,6 +272,40 @@ describe('backend-neutral frame readback (issue #28)', () => {
     })
   })
 
+  // The surface is a ping-pong pair: pipeline.frameReadTextures names the
+  // half the last frame presented, and global_<surface>_read can be the stale
+  // half. The verbs must read the presented half, as testNoPassthrough does.
+  describe('reading the presented half of the render surface', () => {
+    function presentFreshHalf(w: any): void {
+      const pipeline = w[DEFAULT_GLOBALS.renderingPipeline]
+      const read = pipeline.backend.readPixels
+      const stale = new Uint8Array(WIDTH * HEIGHT * 4).fill(7)
+      pipeline.frameReadTextures = new Map([['frame', 'fresh_half']])
+      pipeline.backend.readPixels = async (id: string) => {
+        if (id === 'global_frame_read') return { data: stale, width: WIDTH, height: HEIGHT }
+        if (id === 'fresh_half') return read('global_frame_read')
+        return read(id)
+      }
+    }
+
+    it('renderEffectFrame reads frameReadTextures before global_<surface>_read', async () => {
+      const w = installWebGpuFakeViewer(DEFAULT_GLOBALS)
+      presentFreshHalf(w)
+      const result = await renderEffectFrame(makeSession('webgpu'), 'synth/noise', { warmupFrames: 2 })
+      expect(result.status).toBe('ok')
+      expect((result.metrics as any).mean_rgb[0]).toBeCloseTo((10 + 200 + 200) / 3 / 255, 5)
+    })
+
+    it('testUniformResponsiveness measures the presented half', async () => {
+      const amount = { uniform: 'u_amount', type: 'float', min: 0, max: 1, default: 0.5 }
+      const w = installWebGpuFakeViewer(DEFAULT_GLOBALS, { uniforms: { amount } })
+      presentFreshHalf(w)
+      const result = await testUniformResponsiveness(makeSession('webgpu'), 'synth/noise')
+      expect(result.status).toBe('ok')
+      expect(result.uniforms[0].responds).toBe(true)
+    })
+  })
+
   describe('testNoPassthrough on a WebGPU backend', () => {
     it('measures the output-to-input difference through the backend readback', async () => {
       installWebGpuFakeViewer(DEFAULT_GLOBALS, { filterEffect: true })

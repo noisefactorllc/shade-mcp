@@ -35,13 +35,12 @@ async function warmUp(session: BrowserSession, frames = 6): Promise<void> {
 }
 
 // Capture the rendered frame by reading the OFFSCREEN render surface that
-// pipeline.render() presents (`global_<renderSurface>_read`, falling back to the
-// last node output). Reading the offscreen texture — not the canvas / default
+// pipeline.render() presents (the half recorded in `frameReadTextures`, then
+// `global_<renderSurface>_read`, falling back to the last node output). Reading the offscreen texture — not the canvas / default
 // framebuffer — is the key reliability fix: when paused/headless the WebGL2
 // present blit to the canvas does not commit, so canvas readback (gl.readPixels
 // OR drawImage) returns a blank/partial buffer, while the offscreen surface
-// holds the true render. Both ping-pong buffers carry the rendered content, so
-// the _read buffer is read deterministically. WebGPU readback is bottom-up, so
+// holds the true render. WebGPU readback is bottom-up, so
 // its rows are flipped to top-down to match WebGL2 (which flips internally) —
 // both end up in screen orientation, the same normalization the old canvas
 // capture used, keeping the comparison + Y-flip detector below valid.
@@ -64,7 +63,13 @@ async function captureSurface(
     if (!surf) return null
 
     const readSurface = async () => {
-      const candidates = ['global_' + surf + '_read']
+      // Prefer the half of the surface's ping-pong pair the last frame
+      // presented (frameReadTextures); a fixed global_<surface>_read
+      // guess can pick the stale half after the swap.
+      const candidates: string[] = []
+      const frameRead = p.frameReadTextures?.get?.(surf)
+      if (frameRead) candidates.push(frameRead)
+      candidates.push('global_' + surf + '_read')
       try {
         const nodes: string[] = []
         for (const k of b.textures.keys()) if (/node_\d+_out/.test(k)) nodes.push(k)
