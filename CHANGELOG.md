@@ -3,6 +3,27 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.8] — 2026-10-06
+
+### Changed
+
+- **`testNoPassthrough` accepts a filter that is the identity at its
+  defaults.** When output matches input at defaults, the filter is measured
+  again with each ungated runtime control moved; it is a passthrough only
+  when that changes nothing too. Otherwise the result reports
+  `identity_at_defaults: true` and the values used (`varied`).
+- **`testUniformResponsiveness` measures a control in context.** A control
+  that does not respond is retried once with every other control at its
+  first test value (gated controls with their gates opened); a pass reports
+  that `context`.
+
+### Fixed
+
+- **`testUniformResponsiveness` waits for async overlays** after each change
+  (`Pipeline.whenAsyncInitsSettled`), reports compile-time `define` params as
+  gated instead of failing them, and restores each control to the value the
+  loaded program set rather than its spec default.
+
 ## [0.4.7] — 2026-10-06
 
 ### Fixed
