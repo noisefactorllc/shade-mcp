@@ -1,6 +1,6 @@
 {
   "name": "shade-mcp",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "MCP server for shader effect development",
   "type": "module",
   "license": "MIT",

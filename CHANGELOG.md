@@ -3,6 +3,24 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.6] — 2026-10-06
+
+### Changed
+
+- **`testNoPassthrough` judges by unchanged pixels at two times.** It compared
+  one paused frame at t=0 and called a filter a passthrough when the mean
+  output-to-input difference was at most 1%, so a time-driven filter (a scroll)
+  and a mild filter that changes most pixels slightly (a light blur) were
+  reported as passthroughs. It now compares at t=0 and t=0.37 and reports a
+  passthrough only when the mean difference is within 1% and at most 1% of
+  sampled pixels changed by more than 2/255 (`changed_fraction`).
+
+### Fixed
+
+- **`testUniformResponsiveness` sees alpha.** A control that changes only
+  alpha (a background alpha) was reported as not affecting output; alpha now
+  counts in the per-channel and per-pixel deltas.
+
 ## [0.4.5] — 2026-10-06
 
 ### Fixed
