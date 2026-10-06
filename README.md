@@ -159,6 +159,27 @@ In `~/.codeium/windsurf/mcp_config.json`:
 
 ## Tool Reference
 
+### Result envelope
+
+Every tool returns JSON text in one envelope.
+
+- A single result carries a top-level `outcome`: `ok` (the check passed or
+  the query answered), `fail` (the check ran and its verdict is negative:
+  a parity `mismatch`, a `passthrough` filter, `divergent` algorithms,
+  `meets_target: false`), `warning` (findings to review), `skipped`
+  (nothing was testable) or `error` (no verdict). Verb-specific fields such
+  as `status` and `mismatchPercent` are kept beside it.
+- A batch (several effects in one call) is
+  `{ outcome, summary, results }`. Each entry carries its own `outcome`,
+  `summary` counts entries per outcome, and the batch `outcome` is `error`
+  when every entry is an error, otherwise the worst entry outcome.
+- MCP `isError` is set when the call failed as a whole: a single `error`
+  result, or a batch in which every entry is an `error`. A `fail` verdict is
+  a successful call and does not set `isError`.
+- Errors raised before a tool reaches its own handling, such as an
+  unresolvable effect selector, arrive in the same envelope:
+  `{ "outcome": "error", "status": "error", "error": "..." }`.
+
 ### Browser Tools (8)
 
 These tools require Playwright Chromium; all except `runDslProgram` require a viewer (see [Viewer](#viewer)).

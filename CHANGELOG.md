@@ -5,6 +5,21 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- **One result envelope for every tool (#32).** Each result now carries a
+  common `outcome` (`ok`, `fail`, `warning`, `skipped`, `error`), and
+  verb-specific verdicts map onto it: a parity `mismatch`, a `passthrough`
+  filter, `divergent` algorithms and `meets_target: false` are `fail`.
+  **Breaking for clients that parse batch results:** a multi-effect call
+  used to return a bare JSON array; it now returns
+  `{ outcome, summary, results }`, with an `outcome` on each entry.
+  A batch in which every entry is an error is now marked `isError` (it used
+  to look like a success), and errors thrown before a tool's own handling,
+  such as an unresolvable selector, now arrive as JSON
+  (`{ outcome, status, error }`) instead of bare text. The envelope is
+  documented in the README.
+
 ### Fixed
 
 - **`definition.js` effects are read completely (#30).** `parseDefinitionJs`
