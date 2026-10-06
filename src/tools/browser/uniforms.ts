@@ -125,9 +125,13 @@ export async function testUniformResponsiveness(
         return null
       }
 
-      async function captureMetrics() {
+      // Two capture times: speed-like controls change nothing at t=0, so a
+      // uniform counts as responsive when it moves the output at either time.
+      const CAPTURE_TIMES = [0, 0.37]
+
+      async function captureMetrics(time: number) {
         if (!renderer) return null
-        renderer.render(0)
+        renderer.render(time)
         const read = await readFrame()
         if (!read) return null
         const { pixels, width, height } = read
@@ -139,46 +143,119 @@ export async function testUniformResponsiveness(
         return [sumR / count, sumG / count, sumB / count]
       }
 
-      const baseline = await captureMetrics()
-      if (!baseline) return { status: 'error', tested_uniforms: [], backend: backendName, details: `Failed to capture baseline on ${backendName}` }
+      async function captureAll() {
+        const out: number[][] = []
+        for (const t of CAPTURE_TIMES) {
+          const m = await captureMetrics(t)
+          if (!m) return null
+          out.push(m)
+        }
+        return out
+      }
 
       const effectGlobals = effect.instance.globals
+      const setValue = (uniformName: string, value: unknown) => {
+        if (pipeline.setUniform) pipeline.setUniform(uniformName, value)
+        else if (pipeline.globalUniforms) pipeline.globalUniforms[uniformName] = value
+      }
+      const defaultOf = (spec: any) => spec.default ?? spec.min
+
+      // enabledBy: the control only acts when this condition holds (the same
+      // shape the noisemaker UI evaluates). Find runtime values for the
+      // condition's params that satisfy it; null when it cannot be satisfied
+      // at run time (a compile-time define, an unknown param, a `not`).
+      function satisfy(cond: any, assign: Record<string, unknown>): boolean {
+        if (cond == null) return true
+        if (typeof cond === 'string') return satisfy({ param: cond }, assign)
+        if (Array.isArray(cond.and)) return cond.and.every((c: any) => satisfy(c, assign))
+        if (Array.isArray(cond.or)) return cond.or.some((c: any) => {
+          const trial = { ...assign }
+          if (!satisfy(c, trial)) return false
+          Object.assign(assign, trial)
+          return true
+        })
+        if (cond.not !== undefined) return false
+        const gate = effectGlobals[cond.param]
+        if (!gate || !gate.uniform) return false
+        const choices = gate.choices ? Object.values(gate.choices).filter((v: any) => typeof v === 'number') as number[] : null
+        const lo = typeof gate.min === 'number' ? gate.min : (choices ? Math.min(...choices) : 0)
+        const hi = typeof gate.max === 'number' ? gate.max : (choices ? Math.max(...choices) : 1)
+        const step = gate.type === 'int' || choices ? 1 : (hi - lo) / 100
+        const candidates: unknown[] = []
+        if (cond.eq !== undefined) candidates.push(cond.eq)
+        if (Array.isArray(cond.in)) candidates.push(...cond.in)
+        if (cond.gt !== undefined) candidates.push(cond.gt + step)
+        if (cond.gte !== undefined) candidates.push(cond.gte)
+        if (cond.lt !== undefined) candidates.push(cond.lt - step)
+        if (cond.lte !== undefined) candidates.push(cond.lte)
+        if (cond.neq !== undefined || Array.isArray(cond.notIn)) {
+          const banned = new Set([...(cond.neq !== undefined ? [cond.neq] : []), ...(cond.notIn || [])])
+          for (const v of (choices ?? [defaultOf(gate), lo, hi])) if (!banned.has(v)) { candidates.push(v); break }
+        }
+        if (candidates.length === 0) candidates.push(gate.type === 'boolean' ? true : hi)
+        const holds = (v: any) =>
+          (cond.eq === undefined || v === cond.eq) && (cond.neq === undefined || v !== cond.neq) &&
+          (cond.gt === undefined || v > cond.gt) && (cond.gte === undefined || v >= cond.gte) &&
+          (cond.lt === undefined || v < cond.lt) && (cond.lte === undefined || v <= cond.lte) &&
+          (!Array.isArray(cond.in) || cond.in.includes(v)) && (!Array.isArray(cond.notIn) || !cond.notIn.includes(v)) &&
+          (Object.keys(cond).some((k) => k !== 'param') || Boolean(v))
+        const value = candidates.find(holds)
+        if (value === undefined) return false
+        assign[cond.param] = value
+        return true
+      }
+
       const tested: string[] = []
       const uniforms: Array<Record<string, any>> = []
       const failedNames: string[] = []
       const errorNames: string[] = []
+      const gatedNames: string[] = []
+
+      const baseline = await captureAll()
+      if (!baseline) return { status: 'error', tested_uniforms: [], backend: backendName, details: `Failed to capture baseline on ${backendName}` }
 
       for (const [name, spec] of Object.entries(effectGlobals) as any[]) {
         if (!spec.uniform) continue
         if (spec.type === 'boolean' || spec.type === 'button') continue
         if (typeof spec.min !== 'number' || typeof spec.max !== 'number' || spec.min === spec.max) continue
 
-        const defaultVal = spec.default ?? spec.min
+        const defaultVal = defaultOf(spec)
         const range = spec.max - spec.min
         let testVal = defaultVal === spec.min ? spec.min + range * 0.75 : spec.min + range * 0.25
         if (spec.type === 'int') testVal = Math.round(testVal)
 
-        if (pipeline.setUniform) pipeline.setUniform(spec.uniform, testVal)
-        else if (pipeline.globalUniforms) pipeline.globalUniforms[spec.uniform] = testVal
+        // Enable a gated control first; a gate that cannot be opened at run
+        // time leaves the control untestable here, reported as gated.
+        const gate = spec.ui?.enabledBy
+        const assign: Record<string, unknown> = {}
+        if (gate !== undefined && !satisfy(gate, assign)) {
+          gatedNames.push(name)
+          tested.push(`${name}:gated`)
+          uniforms.push({ name, uniform: spec.uniform, default_value: defaultVal, test_value: testVal,
+            luma_diff: null, max_channel_diff: null, responds: null, gated: true, enabled_by: gate })
+          continue
+        }
+        for (const [param, value] of Object.entries(assign)) setValue(effectGlobals[param].uniform, value)
+        const gateValues = Object.keys(assign).length > 0 ? assign : null
 
-        let testMetrics: number[] | null = null
+        let reference: number[][] | null = baseline
+        let testMetrics: number[][] | null = null
         let measureError: string | null = null
         try {
-          testMetrics = await captureMetrics()
+          if (gateValues) reference = await captureAll()
+          setValue(spec.uniform, testVal)
+          testMetrics = reference ? await captureAll() : null
         } catch (err) {
           measureError = err instanceof Error ? err.message : String(err)
         }
 
-        if (testMetrics) {
-          const lumaDiff = Math.abs(
-            (testMetrics[0] + testMetrics[1] + testMetrics[2]) / 3 -
-            (baseline[0] + baseline[1] + baseline[2]) / 3
-          )
-          const maxChannelDiff = Math.max(
-            Math.abs(testMetrics[0] - baseline[0]),
-            Math.abs(testMetrics[1] - baseline[1]),
-            Math.abs(testMetrics[2] - baseline[2])
-          )
+        if (testMetrics && reference) {
+          let lumaDiff = 0, maxChannelDiff = 0
+          for (let i = 0; i < CAPTURE_TIMES.length; i++) {
+            const a = reference[i], b = testMetrics[i]
+            lumaDiff = Math.max(lumaDiff, Math.abs((b[0] + b[1] + b[2]) / 3 - (a[0] + a[1] + a[2]) / 3))
+            maxChannelDiff = Math.max(maxChannelDiff, Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]), Math.abs(b[2] - a[2]))
+          }
           // This function is serialized into the page: the threshold must stay
           // a literal, kept in sync with UNIFORM_RESPONSE_THRESHOLD.
           const responds = lumaDiff > 0.002 || maxChannelDiff > 0.002
@@ -190,6 +267,7 @@ export async function testUniformResponsiveness(
             luma_diff: lumaDiff,
             max_channel_diff: maxChannelDiff,
             responds,
+            ...(gateValues ? { enabled_with: gateValues } : {}),
           })
           if (responds) {
             tested.push(`${name}:pass`)
@@ -212,16 +290,19 @@ export async function testUniformResponsiveness(
           })
         }
 
-        // Restore default
-        if (pipeline.setUniform) pipeline.setUniform(spec.uniform, defaultVal)
-        else if (pipeline.globalUniforms) pipeline.globalUniforms[spec.uniform] = defaultVal
+        // Restore defaults, the gate params included.
+        setValue(spec.uniform, defaultVal)
+        for (const param of Object.keys(assign)) setValue(effectGlobals[param].uniform, defaultOf(effectGlobals[param]))
       }
 
       let status: string
       let details: string
-      if (tested.length === 0) {
+      const measured = tested.length - gatedNames.length
+      if (measured === 0) {
         status = 'skipped'
-        details = 'No testable uniforms'
+        details = gatedNames.length > 0
+          ? `No testable uniforms; gated: ${gatedNames.join(', ')}`
+          : 'No testable uniforms'
       } else {
         const problems: string[] = []
         if (errorNames.length > 0) problems.push(`could not be measured: ${errorNames.join(', ')}`)
@@ -236,6 +317,7 @@ export async function testUniformResponsiveness(
           status = 'ok'
           details = 'Uniforms affect output'
         }
+        if (gatedNames.length > 0) details += `; gated (not testable at run time): ${gatedNames.join(', ')}`
       }
 
       return {
@@ -266,11 +348,14 @@ export async function testUniformResponsiveness(
 export function registerTestUniformResponsiveness(server: McpServer): void {
   server.tool(
     'testUniformResponsiveness',
-    'For each uniform:\n1. Render a baseline.\n2. Change the uniform value.\n3. Compare the output.\n' +
-        'Status is ok only when at least one uniform was tested and every tested uniform affected output; ' +
+    'For each uniform:\n1. Open its ui.enabledBy gate, if any, by setting the gate params.\n2. Render a baseline at t=0 and t=0.37.\n' +
+        '3. Change the uniform value.\n4. Compare the output at both times.\n' +
+        'A uniform responds when it moves the output at either time. A uniform whose gate cannot be opened at run time ' +
+        '(a compile-time define, a not condition) is reported as gated and not measured. ' +
+        'Status is ok only when at least one uniform was measured and every measured uniform affected output; ' +
         'fail when a measured uniform did not affect output, error when any tested uniform could not be measured (details names them); ' +
-        'skipped when nothing was testable. Each tested uniform is reported with its test value, luma and ' +
-        'max channel deltas against the 0.002 threshold.',
+        'skipped when nothing was measurable. Each measured uniform is reported with its test value, luma and ' +
+        'max channel deltas against the 0.002 threshold, and enabled_with when a gate was opened.',
     testUniformResponsivenessSchema,
     async (args: any) => {
       const config = getConfig()

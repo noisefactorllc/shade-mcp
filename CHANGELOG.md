@@ -26,6 +26,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   failure, so noisemaker's `filter/scanlineError` ("compiled scanlineError")
   failed every verb. Only the whole words count now.
 
+### Changed
+
+- **`testUniformResponsiveness` measures controls the way they work.** It
+  rendered only at t=0 with every control at its default, so speed-like
+  controls (inert at t=0) and controls behind an unmet `ui.enabledBy`
+  condition (palette controls while the palette mode is off) were reported
+  as failures: 117 of noisemaker's 206 effects failed. Each control is now
+  measured at t=0 and t=0.37, after opening its `enabledBy` gate by setting
+  the gate params (`enabled_with` names them); a gate that cannot be opened
+  at run time (a compile-time define, a `not`) is reported as `gated` and
+  not measured. Ungated controls that never move the output still fail.
+
 ### Added
 
 - **Captures wait for async effects.** After a confirmed selection,
