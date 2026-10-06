@@ -115,6 +115,25 @@ export async function testNoPassthrough(
         }
       }
 
+      // The consumed input. A global surface id (global_<name>) names a
+      // ping-pong pair, not a texture: read the half the frame presented
+      // (frameReadTextures), then global_<name>_read, then the id itself.
+      async function readInput(id: string): Promise<{ pixels: Uint8Array; width: number; height: number } | null> {
+        const candidates: string[] = []
+        const surface = id.startsWith('global_') ? id.slice('global_'.length) : null
+        if (surface) {
+          const frameRead = pipeline.frameReadTextures?.get?.(surface)
+          if (frameRead) candidates.push(frameRead)
+          candidates.push(`global_${surface}_read`)
+        }
+        candidates.push(id)
+        for (const candidate of candidates) {
+          const frame = await readTexture(candidate)
+          if (frame) return frame
+        }
+        return null
+      }
+
       // The rendered output: prefer the fresh read half of the render
       // surface's ping-pong pair (frameReadTextures tracks the half the last
       // present used — a fixed global_<surface>_read guess can pick the
@@ -157,7 +176,7 @@ export async function testNoPassthrough(
         for (let attempt = 0; attempt < 6 && (!inputFrame || !outputFrame); attempt++) {
           renderer.render(0)
           renderer.render(0)
-          inputFrame = await readTexture(consumedInput.id)
+          inputFrame = await readInput(consumedInput.id)
           outputFrame = await readOutput()
           if ((!inputFrame || !outputFrame) && attempt < 5) await new Promise((res) => setTimeout(res, 80))
         }

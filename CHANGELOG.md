@@ -16,6 +16,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   verb now reads the presented half of the render surface on both backends
   and falls back to the canvas only when no surface can be read, so the
   frame size and metrics describe the render, not its presentation.
+- **`testNoPassthrough` reads a global surface input through its read half.**
+  A filter whose input is bound to a global surface (`global_o0`) failed with
+  `Failed to read input texture global_o0`, because the backend stores the
+  pair as `global_o0_read`/`_write`. The input is now read from the half the
+  frame presented (`frameReadTextures`), then `global_<name>_read`.
 
 ## [0.4.2] — 2026-10-06
 

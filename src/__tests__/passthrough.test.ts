@@ -169,6 +169,23 @@ describe('testNoPassthrough (issue #31)', () => {
     expect(w.__paused).toBe(false)
   })
 
+  it('reads a global surface input through its read half, not the bare global_<name> id', async () => {
+    // A filter reading o0 binds inputTex to global_o0, which names a
+    // ping-pong pair; the backend stores global_o0_read/_write, never
+    // global_o0 itself.
+    const input: FakeTex = { width: W, height: H, data: variedBytes() }
+    installFakeViewer(DEFAULT_GLOBALS, {
+      effectId: 'filter/copy',
+      passes: [{ inputs: { inputTex: 'global_o0' } }],
+      textures: { global_o0_read: input, global_frame_read: { width: W, height: H, data: new Uint8Array(input.data) } },
+    })
+    const result: any = await testNoPassthrough(makeSession(), 'filter/copy')
+
+    expect(result.status).toBe('passthrough')
+    expect(result.similarity).toBe(0)
+    expect(result.inputTexture).toBe('global_o0')
+  })
+
   it('reports a filter whose output differs from its input beyond the threshold as ok, with the measured difference', async () => {
     const input: FakeTex = { width: W, height: H, data: variedBytes() }
     installFakeViewer(DEFAULT_GLOBALS, {
