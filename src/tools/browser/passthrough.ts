@@ -167,56 +167,80 @@ export async function testNoPassthrough(
       if (w[globals.setPaused]) w[globals.setPaused](true)
       if (w[globals.setPausedTime]) w[globals.setPausedTime](0)
 
-      let inputFrame: { pixels: Uint8Array; width: number; height: number } | null = null
-      let outputFrame: { pixels: Uint8Array; width: number; height: number } | null = null
+      // Compare at two paused times: a time-driven filter (a scroll, a
+      // drift) can be the identity at t=0 and still modify its input.
+      const COMPARE_TIMES = [0, 0.37]
+      type Frame = { pixels: Uint8Array; width: number; height: number }
+      let worst: { meanDiff: number; changedFraction: number } | null = null
       try {
-        // Cold reads can come back blank or the surface may not be
-        // registered yet; retry a bounded number of times (same pattern as
-        // the parity capture).
-        for (let attempt = 0; attempt < 6 && (!inputFrame || !outputFrame); attempt++) {
-          renderer.render(0)
-          renderer.render(0)
-          inputFrame = await readInput(consumedInput.id)
-          outputFrame = await readOutput()
-          if ((!inputFrame || !outputFrame) && attempt < 5) await new Promise((res) => setTimeout(res, 80))
+        for (const t of COMPARE_TIMES) {
+          if (w[globals.setPausedTime]) w[globals.setPausedTime](t)
+          let inputFrame: Frame | null = null
+          let outputFrame: Frame | null = null
+          // Cold reads can come back blank or the surface may not be
+          // registered yet; retry a bounded number of times (same pattern as
+          // the parity capture).
+          for (let attempt = 0; attempt < 6 && (!inputFrame || !outputFrame); attempt++) {
+            renderer.render(t)
+            renderer.render(t)
+            inputFrame = await readInput(consumedInput.id)
+            outputFrame = await readOutput()
+            if ((!inputFrame || !outputFrame) && attempt < 5) await new Promise((res) => setTimeout(res, 80))
+          }
+          if (!inputFrame) {
+            return { status: 'error', isFilterEffect: true, similarity: null, backend: backendName, inputTexture: consumedInput.id, details: `Failed to read input texture ${consumedInput.id} on ${backendName}` }
+          }
+          if (!outputFrame) {
+            return { status: 'error', isFilterEffect: true, similarity: null, backend: backendName, details: `Failed to read pixels on ${backendName}` }
+          }
+
+          // Mean absolute per-channel difference between output and input,
+          // normalized to 0..1, and the fraction of sampled pixels that
+          // changed by more than 2/255 in any channel. Only RGB counts: alpha
+          // is a present detail, not effect output.
+          const count = Math.min(inputFrame.width * inputFrame.height, outputFrame.width * outputFrame.height)
+          const stride = Math.max(1, Math.floor(count / 4096))
+          let diffSum = 0, changed = 0, samples = 0
+          for (let i = 0; i < count; i += stride) {
+            const idx = i * 4
+            const dr = Math.abs(outputFrame.pixels[idx] - inputFrame.pixels[idx])
+            const dg = Math.abs(outputFrame.pixels[idx + 1] - inputFrame.pixels[idx + 1])
+            const db = Math.abs(outputFrame.pixels[idx + 2] - inputFrame.pixels[idx + 2])
+            diffSum += dr + dg + db
+            if (dr > 2 || dg > 2 || db > 2) changed++
+            samples++
+          }
+          const meanDiff = diffSum / (samples * 3 * 255)
+          const changedFraction = changed / samples
+          if (!worst || changedFraction > worst.changedFraction ||
+              (changedFraction === worst.changedFraction && meanDiff > worst.meanDiff)) {
+            worst = { meanDiff, changedFraction }
+          }
         }
       } finally {
+        if (w[globals.setPausedTime]) w[globals.setPausedTime](0)
         if (w[globals.setPaused]) w[globals.setPaused](false)
       }
 
-      if (!inputFrame) {
-        return { status: 'error', isFilterEffect: true, similarity: null, backend: backendName, inputTexture: consumedInput.id, details: `Failed to read input texture ${consumedInput.id} on ${backendName}` }
-      }
-      if (!outputFrame) {
-        return { status: 'error', isFilterEffect: true, similarity: null, backend: backendName, details: `Failed to read pixels on ${backendName}` }
-      }
-
-      // Mean absolute per-channel difference between output and input,
-      // normalized to 0..1. Only RGB counts: alpha is a present detail, not
-      // effect output.
-      const count = Math.min(inputFrame.width * inputFrame.height, outputFrame.width * outputFrame.height)
-      const stride = Math.max(1, Math.floor(count / 1000))
-      let diffSum = 0, samples = 0
-      for (let i = 0; i < count; i += stride) {
-        const idx = i * 4
-        diffSum += Math.abs(outputFrame.pixels[idx] - inputFrame.pixels[idx]) +
-          Math.abs(outputFrame.pixels[idx + 1] - inputFrame.pixels[idx + 1]) +
-          Math.abs(outputFrame.pixels[idx + 2] - inputFrame.pixels[idx + 2])
-        samples++
-      }
-      const meanDiff = diffSum / (samples * 3 * 255)
+      // A passthrough leaves nearly every pixel as it was: the mean
+      // difference stays within the threshold AND at most 1% of the sampled
+      // pixels change. A filter that subtly changes most pixels (a mild
+      // blur) modifies its input even when its mean difference is small.
+      const meanDiff = worst!.meanDiff
+      const changedFraction = worst!.changedFraction
       const threshold = 0.01
-      const isPassthrough = meanDiff <= threshold
+      const isPassthrough = meanDiff <= threshold && changedFraction <= threshold
 
       return {
         status: isPassthrough ? 'passthrough' : 'ok',
         isFilterEffect: true,
         similarity: meanDiff,
+        changed_fraction: changedFraction,
         threshold,
         inputTexture: consumedInput.id,
         details: isPassthrough
-          ? `Output matches input (mean diff ${meanDiff.toFixed(4)} <= ${threshold})`
-          : `Effect modifies input (mean diff ${meanDiff.toFixed(4)} > ${threshold})`
+          ? `Output matches input (mean diff ${meanDiff.toFixed(4)}, ${(changedFraction * 100).toFixed(1)}% of pixels changed)`
+          : `Effect modifies input (mean diff ${meanDiff.toFixed(4)}, ${(changedFraction * 100).toFixed(1)}% of pixels changed)`
       }
     }, session.globals)
 

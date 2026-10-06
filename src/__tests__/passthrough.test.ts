@@ -158,14 +158,15 @@ describe('testNoPassthrough (issue #31)', () => {
     expect(result.similarity).toBe(0)
     expect(result.threshold).toBe(0.01)
     expect(result.inputTexture).toBe('inputTex')
-    // The verdict was measured at one fixed paused time: every render happened
-    // while paused at time 0, and the viewer runs again afterwards.
+    // The verdict was measured at fixed paused times (0 and 0.37): every
+    // render happened while paused, and the viewer runs again afterwards.
     const w: any = (globalThis as any).window
     expect(w.__renderTimes.length).toBeGreaterThan(0)
     for (const r of w.__renderTimes) {
       expect(r.paused).toBe(true)
-      expect(r.time).toBe(0)
+      expect([0, 0.37]).toContain(r.time)
     }
+    expect(new Set(w.__renderTimes.map((r: any) => r.time))).toEqual(new Set([0, 0.37]))
     expect(w.__paused).toBe(false)
   })
 
@@ -184,6 +185,23 @@ describe('testNoPassthrough (issue #31)', () => {
     expect(result.status).toBe('passthrough')
     expect(result.similarity).toBe(0)
     expect(result.inputTexture).toBe('global_o0')
+  })
+
+  it('counts a subtle filter that changes most pixels as modifying its input', async () => {
+    // Every pixel's red shifted by 3/255: the mean difference is ~0.4%, below
+    // the old mean-only threshold, but no pixel is left as it was.
+    const input: FakeTex = { width: W, height: H, data: variedBytes() }
+    const out = new Uint8Array(input.data)
+    for (let i = 0; i < out.length; i += 4) out[i] = out[i] <= 252 ? out[i] + 3 : out[i] - 3
+    installFakeViewer(DEFAULT_GLOBALS, {
+      effectId: 'filter/subtle',
+      passes: [{ inputs: { inputTex: 'inputTex' } }],
+      textures: { inputTex: input, global_frame_read: { width: W, height: H, data: out } },
+    })
+    const result: any = await testNoPassthrough(makeSession(), 'filter/subtle')
+    expect(result.similarity).toBeLessThan(0.01)
+    expect(result.changed_fraction).toBeGreaterThan(0.9)
+    expect(result.status).toBe('ok')
   })
 
   it('reports a filter whose output differs from its input beyond the threshold as ok, with the measured difference', async () => {
