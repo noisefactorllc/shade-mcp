@@ -131,10 +131,17 @@ export async function benchmarkEffectFPS(
       })
     }, { duration })
 
-    // Report the frame size the benchmark actually measured at: the viewer's
-    // layout owns the canvas backing size, so it can differ from the request.
+    // Report the size the pipeline rendered at. The presented canvas is sized
+    // by the viewer's layout and can be smaller than the render (noisemaker's
+    // demo viewer presents a 512x512 render in a 179x179 canvas), so it is
+    // only the fallback when the pipeline does not expose its size.
     const frame = await page.evaluate((globals) => {
-      const canvas = (window as any)[globals.canvasRenderer]?.canvas
+      const w = window as any
+      const pipeline = w[globals.renderingPipeline]
+      if (Number.isFinite(pipeline?.width) && Number.isFinite(pipeline?.height) && pipeline.width > 0 && pipeline.height > 0) {
+        return { width: pipeline.width, height: pipeline.height }
+      }
+      const canvas = w[globals.canvasRenderer]?.canvas
       return canvas ? { width: canvas.width, height: canvas.height } : null
     }, session.globals)
 

@@ -3,6 +3,17 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] — 2026-10-06
+
+### Fixed
+
+- **`benchmarkEffectFPS` reports the size the pipeline rendered at.** It
+  reported the presented canvas, which the viewer's layout sizes: noisemaker's
+  demo viewer measured a 256x256 request as 90x90 and warned that the
+  resolution was not honored, although the pipeline rendered at 256x256. It now
+  reports `pipeline.width`/`height` and falls back to the canvas only when the
+  pipeline does not expose them, matching `renderEffectFrame` since 0.4.3.
+
 ## [0.4.3] — 2026-10-06
 
 ### Fixed

@@ -283,6 +283,20 @@ describe('benchmarkEffectFPS frame size reporting (issue #33)', () => {
     expect(result.warning).toContain('90x90')
   })
 
+  it('reports the pipeline render size, not the smaller presented canvas', async () => {
+    const w = installFakeViewer(DEFAULT_GLOBALS, { canvasWidth: 90, canvasHeight: 90, fixed: true })
+    // The renderer resized the pipeline to the request; the viewer's layout
+    // keeps presenting it in a 90x90 canvas.
+    Object.assign(w[DEFAULT_GLOBALS.renderingPipeline], { width: 256, height: 256 })
+    const { session } = makeSession()
+
+    const result = await benchmarkEffectFPS(session, 'synth/noise', { durationSeconds: 0.05, resolution: [256, 256] })
+
+    expect(result.status).toBe('ok')
+    expect(result.frame).toEqual({ width: 256, height: 256 })
+    expect(result.warning).toBeUndefined()
+  })
+
   it('does not warn when the measured size matches the request', async () => {
     installFakeViewer(DEFAULT_GLOBALS, { canvasWidth: 256, canvasHeight: 256, fixed: true })
     const { session } = makeSession()
