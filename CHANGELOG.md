@@ -3,6 +3,20 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`renderEffectFrame` reads the render surface on WebGL2 too.** On WebGL2
+  it read the default framebuffer, which is the viewer's presented canvas
+  and is sized by the viewer's own layout: noisemaker's demo viewer, laid
+  out at 179x179 in a 512x512 window, returned a 179x179 frame for a
+  512x512 request although the pipeline rendered at 512x512. WebGPU already
+  read the render surface, as `testPixelParity` does on both backends. The
+  verb now reads the presented half of the render surface on both backends
+  and falls back to the canvas only when no surface can be read, so the
+  frame size and metrics describe the render, not its presentation.
+
 ## [0.4.2] — 2026-10-06
 
 ### Fixed

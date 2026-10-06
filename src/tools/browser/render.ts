@@ -187,63 +187,68 @@ export async function renderEffectFrame(
         let topDown = false
 
         const gl = backend?.gl
-        if (gl) {
-          pixels = new Uint8Array(width * height * 4)
-          gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-          gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
-        } else if (backend?.readPixels && backend?.textures) {
-          // No GL context (WebGPU): read the offscreen render surface through
-          // the backend's async texture reader — the same surface and
-          // candidate fallback the parity capture uses. Each retry redraws at
-          // the requested time, because the async copy may still deliver the
-          // previous frame right after a draw.
-          const surf = pipeline.graph?.renderSurface
-          if (surf) {
-            // Prefer the half of the surface's ping-pong pair the last frame
-            // presented (frameReadTextures); a fixed global_<surface>_read
-            // guess can pick the stale half after the swap.
-            const candidates: string[] = []
-            const frameRead = pipeline.frameReadTextures?.get?.(surf)
-            if (frameRead) candidates.push(frameRead)
-            candidates.push('global_' + surf + '_read')
-            try {
-              const nodes: string[] = []
-              for (const k of backend.textures.keys()) if (/node_\d+_out/.test(k)) nodes.push(k)
-              nodes.sort((a: string, c: string) => parseInt(a.match(/node_(\d+)/)![1], 10) - parseInt(c.match(/node_(\d+)/)![1], 10))
-              if (nodes.length) candidates.push(nodes[nodes.length - 1])
-            } catch (e) { /* textures map not iterable */ }
-            // The parity capture draws twice before its first readback; mirror
-            // that here so an async in-flight copy cannot deliver the frame
-            // before the requested one.
-            if (time !== null && typeof renderer.render === 'function') renderer.render(time)
-            for (let attempt = 0; attempt < 6 && !pixels; attempt++) {
-              if (attempt > 0 && time !== null && typeof renderer.render === 'function') renderer.render(time)
-              // A read issued right after a draw can return the previous
-              // frame; drain the submitted work first (same as runDslProgram).
-              await backend.device?.queue?.onSubmittedWorkDone?.()
-              for (const id of candidates) {
-                try {
-                  const px = await backend.readPixels(id)
-                  if (px && px.width && px.height && px.data) {
-                    width = px.width; height = px.height
-                    const raw = px.data instanceof Float32Array
-                      ? Uint8Array.from(px.data, (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 255))
-                      : new Uint8Array(px.data)
-                    // WebGPU readback is bottom-up; flip the rows to top-down
-                    // so the capture orientation matches the WebGL2 read.
+        // Read the offscreen render surface on both backends, as the parity
+        // capture does: it holds the frame at the pipeline's render size. The
+        // WebGL2 canvas (default framebuffer) is only the presentation, sized
+        // by the viewer's own layout, so it can differ from the render size
+        // (a viewer laid out at 179x179 presents a 512x512 render).
+        const surf = pipeline.graph?.renderSurface
+        if (surf && backend?.readPixels && backend?.textures) {
+          // Prefer the half of the surface's ping-pong pair the last frame
+          // presented (frameReadTextures); a fixed global_<surface>_read
+          // guess can pick the stale half after the swap.
+          const candidates: string[] = []
+          const frameRead = pipeline.frameReadTextures?.get?.(surf)
+          if (frameRead) candidates.push(frameRead)
+          candidates.push('global_' + surf + '_read')
+          try {
+            const nodes: string[] = []
+            for (const k of backend.textures.keys()) if (/node_\d+_out/.test(k)) nodes.push(k)
+            nodes.sort((a: string, c: string) => parseInt(a.match(/node_(\d+)/)![1], 10) - parseInt(c.match(/node_(\d+)/)![1], 10))
+            if (nodes.length) candidates.push(nodes[nodes.length - 1])
+          } catch (e) { /* textures map not iterable */ }
+          // The parity capture draws twice before its first readback; mirror
+          // that here so an async in-flight copy cannot deliver the frame
+          // before the requested one.
+          if (time !== null && typeof renderer.render === 'function') renderer.render(time)
+          for (let attempt = 0; attempt < 6 && !pixels; attempt++) {
+            if (attempt > 0 && time !== null && typeof renderer.render === 'function') renderer.render(time)
+            // A read issued right after a draw can return the previous
+            // frame; drain the submitted work first (same as runDslProgram).
+            await backend.device?.queue?.onSubmittedWorkDone?.()
+            for (const id of candidates) {
+              try {
+                const px = await backend.readPixels(id)
+                if (px && px.width && px.height && px.data) {
+                  width = px.width; height = px.height
+                  const raw = px.data instanceof Float32Array
+                    ? Uint8Array.from(px.data, (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 255))
+                    : new Uint8Array(px.data)
+                  if (gl) {
+                    // The WebGL2 backend reader already returns rows top-down.
+                    pixels = raw
+                  } else {
+                    // WebGPU readback is bottom-up; flip the rows to top-down.
                     pixels = new Uint8Array(width * height * 4)
                     const rowBytes = width * 4
                     for (let y = 0; y < height; y++) {
                       pixels.set(raw.subarray((height - 1 - y) * rowBytes, (height - y) * rowBytes), y * rowBytes)
                     }
-                    topDown = true
-                    break
                   }
-                } catch (e) { /* try next candidate */ }
-              }
-              if (!pixels) await new Promise((res) => setTimeout(res, 80))
+                  topDown = true
+                  break
+                }
+              } catch (e) { /* try next candidate */ }
             }
+            if (!pixels) await new Promise((res) => setTimeout(res, 80))
           }
+        }
+        if (!pixels && gl) {
+          // No readable surface: fall back to the presented canvas.
+          width = canvas.width; height = canvas.height
+          pixels = new Uint8Array(width * height * 4)
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+          gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
         }
 
         if (!pixels) {

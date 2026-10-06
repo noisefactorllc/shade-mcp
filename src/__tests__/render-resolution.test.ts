@@ -132,6 +132,27 @@ describe('renderEffectFrame resolution honoring (issue #33)', () => {
     expect(result.warning).toContain('90x90')
   })
 
+  // The WebGL2 canvas is only the presentation, sized by the viewer's layout;
+  // the render surface holds the frame at the pipeline's render size. A
+  // viewer laid out at 90x90 that renders at 256x256 must report 256x256.
+  it('reads the WebGL2 render surface, not the smaller presented canvas', async () => {
+    const w = installFakeViewer(DEFAULT_GLOBALS, { canvasWidth: 90, canvasHeight: 90, fixed: true })
+    const backend = w[DEFAULT_GLOBALS.renderingPipeline].backend
+    backend.textures = new Map([['global_frame_read', {}]])
+    backend.readPixels = (id: string) => id === 'global_frame_read'
+      ? { width: 256, height: 256, data: new Uint8Array(256 * 256 * 4).fill(200) }
+      : null
+    const { session } = makeSession()
+
+    const result = await renderEffectFrame(session, 'synth/noise', { warmupFrames: 2, resolution: [256, 256] })
+
+    expect(result.status).toBe('ok')
+    expect(result.frame?.width).toBe(256)
+    expect(result.frame?.height).toBe(256)
+    expect(result.warning).toBeUndefined()
+    expect((result.metrics as any).mean_rgb[0]).toBeCloseTo(200 / 255, 6)
+  })
+
   it('renders at the requested size when sizing the canvas honors the request', async () => {
     installFakeViewer(DEFAULT_GLOBALS, { canvasWidth: 90, canvasHeight: 90 })
     const { session } = makeSession()
