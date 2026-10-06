@@ -280,6 +280,20 @@ export async function testUniformResponsiveness(
         return values.length > 0 ? values : [far]
       }
 
+      // Another control's value for a context: its first test value, or for
+      // a vector (a tint, a color wheel) each component moved a quarter of
+      // the range toward the far end. undefined when it cannot be moved.
+      const contextValueOf = (param: string, spec: any): unknown => {
+        if (!spec.uniform || spec.define !== undefined) return undefined
+        const start = startOf(param)
+        if (Array.isArray(start)) {
+          const lo = typeof spec.min === 'number' ? spec.min : 0
+          const hi = typeof spec.max === 'number' ? spec.max : 1
+          return start.map((c: number) => c + (c <= (lo + hi) / 2 ? 1 : -1) * (hi - lo) / 4)
+        }
+        return measurable(spec) ? testValuesOf(param, spec)[0] : undefined
+      }
+
       type Capture = Array<{ mean: number[]; samples: number[] }>
       const compare = (reference: Capture, test: Capture) => {
         let luma = 0, channel = 0, pixel = 0
@@ -326,6 +340,8 @@ export async function testUniformResponsiveness(
 
       for (const [name, spec] of Object.entries(effectGlobals) as any[]) {
         if (!spec.uniform) continue
+        // A param the UI hides (ui.control: false) is not a user control.
+        if (spec.ui?.control === false) continue
         if (spec.type === 'boolean' || spec.type === 'button') continue
         if (typeof spec.min !== 'number' || typeof spec.max !== 'number' || spec.min === spec.max) continue
 
@@ -360,29 +376,29 @@ export async function testUniformResponsiveness(
         try {
           measured = await measure(spec, assign, testValues)
           await restore([name, ...Object.keys(assign)])
-          // A control can act only in combination with others (a range that
+          // A control can act only in combination with another (a range that
           // selects what an adjustment changes, a transform of a feedback
-          // that is mixed out at defaults). Try once more with every other
-          // control at its first test value (gated ones with their gates
-          // opened), the control's own gate on top.
+          // that is mixed out at defaults). Retry with one other control at a
+          // time at its first test value (a gated one with its gate opened),
+          // the control's own gate on top. Moving every other control at once
+          // can push the content off-screen (pan and scale at their 25%
+          // points), and then nothing is tested.
           if (measured && !responds(measured)) {
-            const varied: Record<string, unknown> = {}
             for (const [other, otherSpec] of Object.entries(effectGlobals) as any[]) {
-              if (other === name || !measurable(otherSpec)) continue
-              // A gated other (an adjustment behind an enable toggle) joins
-              // the context with its gate opened, when the gate can be.
-              if (otherSpec.ui?.enabledBy !== undefined) {
-                const trial = { ...varied }
-                if (!satisfy(otherSpec.ui.enabledBy, trial)) continue
-                Object.assign(varied, trial)
-              }
-              if (!(other in varied)) varied[other] = testValuesOf(other, otherSpec)[0]
-            }
-            Object.assign(varied, assign)
-            if (Object.keys(varied).length > Object.keys(assign).length) {
+              if (other === name || other in assign || otherSpec.ui?.control === false) continue
+              const value = contextValueOf(other, otherSpec)
+              if (value === undefined) continue
+              const varied: Record<string, unknown> = {}
+              if (otherSpec.ui?.enabledBy !== undefined && !satisfy(otherSpec.ui.enabledBy, varied)) continue
+              // When the other is gated by this control (an adjustment behind
+              // an enable toggle), the toggle stays where it started in the
+              // reference and its test value opens the gate.
+              delete varied[name]
+              varied[other] = value
+              Object.assign(varied, assign)
               const retry = await measure(spec, varied, testValues)
               await restore([name, ...Object.keys(varied)])
-              if (retry && responds(retry)) { measured = retry; context = varied }
+              if (retry && responds(retry)) { measured = retry; context = varied; break }
             }
           }
         } catch (err) {

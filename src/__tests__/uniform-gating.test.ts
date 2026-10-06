@@ -235,6 +235,58 @@ describe('testUniformResponsiveness: controls inert at defaults', () => {
     expect(range.context).toMatchObject({ hslEnable: 1, hueShift: -0.5 })
   })
 
+  it('finds the one control a gated-by-value control needs even when another would blank the frame', async () => {
+    // posX at its 25% point moves the content off-screen; mix enables shine.
+    const specs = {
+      posX: { uniform: 'u_pos', type: 'float', min: -100, max: 100, default: 0 },
+      mix: { uniform: 'u_mix', type: 'float', min: 0, max: 100, default: 0 },
+      shine: { uniform: 'u_shine', type: 'float', min: 0, max: 1, default: 0.5 },
+    }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v, _t, px) =>
+      Math.abs(v.u_pos) > 10 ? 0 : (px % 2) * 0.3 + 0.2 + (v.u_mix / 100) * 0.4 * v.u_shine)
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    const shine = result.uniforms.find((u: any) => u.name === 'shine')
+    expect(shine.responds).toBe(true)
+    expect(shine.context).toEqual({ mix: 75 })
+  })
+
+  it('measures an enable toggle against the adjustment it gates', async () => {
+    const specs = {
+      hslEnable: { uniform: 'u_enable', type: 'int', min: 0, max: 1, default: 0 },
+      hueShift: { uniform: 'u_shift', type: 'float', min: -1, max: 1, default: 0, ui: { enabledBy: 'hslEnable' } },
+    }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v) => 0.4 + (v.u_enable ? 0.3 * v.u_shift : 0))
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    const toggle = result.uniforms.find((u: any) => u.name === 'hslEnable')
+    expect(toggle.responds).toBe(true)
+    expect(toggle.context).toEqual({ hueShift: -0.5 })
+  })
+
+  it('moves a vector control off neutral for a control that balances it', async () => {
+    const neutral = [0.5, 0.5, 0.5]
+    const specs = {
+      shadowTint: { uniform: 'u_tint', type: 'vec3', default: neutral },
+      balance: { uniform: 'u_balance', type: 'float', min: -1, max: 1, default: 0 },
+    }
+    const tinted = (t: number[]) => t.some((c, i) => Math.abs(c - neutral[i]) > 1e-4)
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v) => 0.4 + (tinted(v.u_tint) ? 0.3 * v.u_balance : 0))
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    const balance = result.uniforms.find((u: any) => u.name === 'balance')
+    expect(balance.responds).toBe(true)
+    expect(balance.context).toEqual({ shadowTint: [0.75, 0.75, 0.75] })
+  })
+
+  it('skips params the UI hides (ui.control: false)', async () => {
+    const specs = {
+      amount: { uniform: 'u_amount', type: 'float', min: 0, max: 1, default: 0.5 },
+      hidden: { uniform: 'u_hidden', type: 'float', min: 0, max: 1, default: 0.5, ui: { control: false } },
+    }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v) => v.u_amount)
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    expect(result.status).toBe('ok')
+    expect(result.uniforms.map((u: any) => u.name)).toEqual(['amount'])
+  })
+
   it('waits for an async overlay to regenerate before capturing', async () => {
     const specs = { density: { uniform: 'u_density', type: 'float', min: 0, max: 1, default: 0.5 } }
     let drawn = 0.5
