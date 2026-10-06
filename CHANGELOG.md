@@ -3,6 +3,32 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] — 2026-10-06
+
+### Fixed
+
+- **WebGPU browser sessions keep the runner's environment.** `BrowserSession`
+  replaced the chromium process environment with the SwiftShader Vulkan
+  variables. On sandboxed runners that reach the web only through a filtering
+  proxy, the replacement dropped `HTTP(S)_PROXY`/`NO_PROXY`, so the viewer
+  page's CDN import failed with `ERR_NAME_NOT_RESOLVED` before the renderer
+  global appeared and session setup timed out. The ICD variables are now
+  merged over `process.env`, with a lifecycle regression asserting a proxy
+  variable survives.
+- **The viewer server binds on restricted runners.** Verification sandboxes
+  refuse an ephemeral loopback `listen(0)` with `EPERM` while permitting
+  explicit fixed ports, which failed every server-binding test there.
+  Ephemeral requests now bind through a candidate chain — an `NM_TS_PORT`
+  override, the requested port, then a rotating fixed fallback range — each
+  attempt on a fresh server, rejecting only after every candidate fails;
+  an explicitly requested nonzero port keeps its exact single-attempt
+  semantics. A release after an acquire also waits for the previous server's
+  close to drain, fixing the re-bind-during-teardown connection reset that
+  the traversal canary documents.
+- The dist self-contained check stages its drop with a plain JS copy instead
+  of `fs.cpSync({ recursive: true })`, whose native path fails with `EACCES`
+  on overlayfs under Node ≥ 26. Same assertions, portable staging.
+
 ## [0.3.2] — 2026-10-04
 
 ### Changed
