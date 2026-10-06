@@ -3,6 +3,19 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] — 2026-10-06
+
+### Fixed
+
+- **`checkEffectStructure` no longer calls every shader file unused when a
+  definition builds its passes at run time.** Since 0.4.0 a `definition.js`
+  whose passes come from `flatMap` or a spread is projected with no pass
+  list and marked `partial`, and the unused-file check then flagged all of
+  its files (19 in noisemaker's `render/pointsBillboardRender`, 9 in
+  `render/pointsRender`). When the passes are partial, the check is skipped
+  and `unusedFilesUnchecked` gives the reason; the other structure checks
+  still run.
+
 ## [0.4.0] — 2026-10-06
 
 ### Changed

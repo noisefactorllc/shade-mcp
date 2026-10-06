@@ -115,15 +115,22 @@ export async function checkEffectStructure(effectId: string): Promise<any> {
   // Referenced programs from passes
   const referencedPrograms = new Set(def.passes.map((p: any) => p.program))
 
-  // Unused files
-  for (const f of glslFiles) {
-    if (!referencedPrograms.has(programName(f))) {
-      issues.unusedFiles.push(`glsl/${f}`)
+  // Unused files. When the definition builds its passes at run time (for
+  // example with flatMap), the static projection cannot list every program,
+  // so no file can be called unused; say so instead of flagging them all.
+  const passReasons = (def.partialReasons || []).filter((r: string) => r.startsWith('passes'))
+  if (passReasons.length > 0) {
+    issues.unusedFilesUnchecked = `passes are computed at run time: ${passReasons.join('; ')}`
+  } else {
+    for (const f of glslFiles) {
+      if (!referencedPrograms.has(programName(f))) {
+        issues.unusedFiles.push(`glsl/${f}`)
+      }
     }
-  }
-  for (const f of wgslFiles) {
-    if (!referencedPrograms.has(programName(f))) {
-      issues.unusedFiles.push(`wgsl/${f}`)
+    for (const f of wgslFiles) {
+      if (!referencedPrograms.has(programName(f))) {
+        issues.unusedFiles.push(`wgsl/${f}`)
+      }
     }
   }
 
