@@ -5,6 +5,7 @@ import type { EffectSelectionResult, RenderResult } from '../../harness/types.js
 import { getConfig } from '../../config.js'
 import { resolveEffectIds } from '../resolve-effects.js'
 import { toolResult } from '../tool-result.js'
+import { computeImageMetrics } from '../../harness/pixel-reader.js'
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -143,8 +144,15 @@ export async function renderEffectFrame(
     }
 
     try {
-      // Read pixels and compute metrics
+      // Read pixels in the page; the metrics are computed in Node below.
       const result = await page.evaluate(async ({ captureImage, globals, time, requested }) => {
+        const toBase64 = (bytes: Uint8Array): string => {
+          let binary = ''
+          for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+            binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000))
+          }
+          return btoa(binary)
+        }
         const pipeline = (window as any)[globals.renderingPipeline]
         // Error paths echo the requested resolution too: the caller must be
         // able to see the request was made even when rendering fails.
@@ -240,40 +248,17 @@ export async function renderEffectFrame(
           })
         }
 
-        // Compute metrics
-        const pixelCount = width * height
-        const stride = Math.max(1, Math.floor(pixelCount / 1000))
-        let sumR = 0, sumG = 0, sumB = 0, sumA = 0
-        let sumR2 = 0, sumG2 = 0, sumB2 = 0
-        let samples = 0
-        const colorSet = new Set<string>()
-
-        for (let i = 0; i < pixelCount; i += stride) {
-          const idx = i * 4
-          const r = pixels[idx] / 255, g = pixels[idx + 1] / 255, b = pixels[idx + 2] / 255, a = pixels[idx + 3] / 255
-          sumR += r; sumG += g; sumB += b; sumA += a
-          sumR2 += r * r; sumG2 += g * g; sumB2 += b * b
-          colorSet.add(`${pixels[idx]},${pixels[idx + 1]},${pixels[idx + 2]}`)
-          samples++
+        // Screen orientation (top-down) for both the metrics and the capture.
+        // Bottom-up WebGL reads are flipped here; backend-neutral reads
+        // already are top-down.
+        let screen = pixels
+        if (!topDown) {
+          screen = new Uint8Array(width * height * 4)
+          const rowBytes = width * 4
+          for (let y = 0; y < height; y++) {
+            screen.set(pixels.subarray((height - 1 - y) * rowBytes, (height - y) * rowBytes), y * rowBytes)
+          }
         }
-
-        const meanR = sumR / samples, meanG = sumG / samples, meanB = sumB / samples
-        const stdR = Math.sqrt(sumR2 / samples - meanR * meanR)
-        const stdG = Math.sqrt(sumG2 / samples - meanG * meanG)
-        const stdB = Math.sqrt(sumB2 / samples - meanB * meanB)
-        const luma = 0.299 * meanR + 0.587 * meanG + 0.114 * meanB
-        let lumaVar = 0
-        for (let i = 0; i < pixelCount; i += stride) {
-          const idx = i * 4
-          const l = 0.299 * pixels[idx] / 255 + 0.587 * pixels[idx + 1] / 255 + 0.114 * pixels[idx + 2] / 255
-          lumaVar += (l - luma) * (l - luma)
-        }
-        lumaVar /= samples
-
-        const isAllZero = meanR === 0 && meanG === 0 && meanB === 0
-        const isAllTransparent = sumA / samples < 0.01
-        const isBlank = lumaVar < 0.0001
-        const isMono = colorSet.size <= 1
 
         let imageUri: string | null = null
         if (captureImage) {
@@ -281,19 +266,7 @@ export async function renderEffectFrame(
           tmpCanvas.width = width; tmpCanvas.height = height
           const ctx = tmpCanvas.getContext('2d')!
           const imgData = ctx.createImageData(width, height)
-          for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-              // Bottom-up WebGL reads need a vertical flip to reach screen
-              // orientation; backend-neutral reads are already top-down.
-              const srcRow = topDown ? y : (height - 1 - y)
-              const srcIdx = (srcRow * width + x) * 4
-              const dstIdx = (y * width + x) * 4
-              imgData.data[dstIdx] = pixels[srcIdx]
-              imgData.data[dstIdx + 1] = pixels[srcIdx + 1]
-              imgData.data[dstIdx + 2] = pixels[srcIdx + 2]
-              imgData.data[dstIdx + 3] = pixels[srcIdx + 3]
-            }
-          }
+          imgData.data.set(screen)
           ctx.putImageData(imgData, 0, 0)
           imageUri = tmpCanvas.toDataURL('image/png')
         }
@@ -309,23 +282,20 @@ export async function renderEffectFrame(
             warning: `Requested resolution ${requested[0]}x${requested[1]} but rendered ${width}x${height}; the viewer did not honor the requested resolution`,
           } : {}),
           frame: { image_uri: imageUri, width, height },
-          metrics: {
-            mean_rgb: [meanR, meanG, meanB] as [number, number, number],
-            mean_alpha: sumA / samples,
-            std_rgb: [stdR, stdG, stdB] as [number, number, number],
-            luma_variance: lumaVar,
-            unique_sampled_colors: colorSet.size,
-            is_all_zero: isAllZero,
-            is_all_transparent: isAllTransparent,
-            is_essentially_blank: isBlank,
-            is_monochrome: isMono
-          }
+          // The metrics are computed in Node by computeImageMetrics, the one
+          // definition every verb and the library export share (issue #29).
+          // page.evaluate cannot call a Node import, so the bytes travel back.
+          pixels: toBase64(screen),
         }
       }, { captureImage: options.captureImage ?? false, globals: session.globals, time: options.time ?? null, requested: options.resolution ?? null })
 
       // The page-confirmed effect id travels with the capture result.
+      const { pixels, ...captured } = result as RenderResult & { pixels?: string }
+      if (pixels !== undefined && captured.frame) {
+        captured.metrics = computeImageMetrics(Buffer.from(pixels, 'base64'), captured.frame.width, captured.frame.height)
+      }
       return {
-        ...(result as RenderResult),
+        ...captured,
         ...(selection.effectId ? { effect_id: selection.effectId } : {}),
       } as RenderResult
     } finally {

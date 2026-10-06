@@ -53,4 +53,14 @@ describe('computeImageMetrics', () => {
     expect(metrics.mean_alpha).toBe(1)
     expect(metrics.unique_sampled_colors).toBeGreaterThan(1)
   })
+
+  it('calls a flat bright frame essentially blank (issue #29)', () => {
+    const data = new Uint8Array(4 * 100)
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = 200; data[i+1] = 200; data[i+2] = 200; data[i+3] = 255
+    }
+    const metrics = computeImageMetrics(data, 10, 10)
+    expect(metrics.is_essentially_blank).toBe(true)
+    expect(metrics.is_all_zero).toBe(false)
+  })
 })

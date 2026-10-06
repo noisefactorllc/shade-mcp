@@ -36,6 +36,21 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `globals` and `passes`, and both keep `define` and `ui`. Against
   noisemaker's 210 effects, 208 now match the live module's passes and
   globals exactly.
+- **`ImageMetrics` fields mean one thing everywhere (#29).**
+  `renderEffectFrame` computed its metrics in the page while `runDslProgram`
+  and the library export used `computeImageMetrics`, and four fields
+  disagreed. A flat mid-gray frame was `is_essentially_blank` from one verb
+  and not the other. `renderEffectFrame` now reads the frame back to Node and
+  calls `computeImageMetrics`, the only implementation, whose fields are
+  documented on the `ImageMetrics` type. Each field keeps the meaning its
+  name states, which is the one `renderEffectFrame` already used except for
+  transparency: `is_essentially_blank` is a flat frame (luma variance
+  below 1e-4) at any brightness, `unique_sampled_colors` and `is_monochrome`
+  count exact 8-bit colors, and `is_all_transparent` requires every sample
+  to be transparent. **Changed values:** library and `runDslProgram`
+  callers see the flat-frame blank rule and exact color counts;
+  `renderEffectFrame` callers see `is_all_transparent` false when any
+  sample is opaque.
 - **A projection that is not complete says so.** A value that only exists
   at run time (a spread, `Array.from`, `flatMap`, a reference to another
   binding) is left out, and the definition carries `partial: true` with
