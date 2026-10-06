@@ -1,71 +1,107 @@
 import { readFileSync } from 'node:fs'
-import type { EffectDefinition, EffectUniform } from './types.js'
+import { parse } from 'acorn'
+import type { EffectDefinition } from './types.js'
+import { normalizeGlobal, normalizePass } from './normalize.js'
+
+// Reads a definition.js without running it. The module is parsed into an
+// AST, the effect's config is located — the object literal passed to
+// `new Effect(...)` or `super(...)`, a default-exported object, or the class
+// fields of a class that extends Effect — and its literal values are read
+// directly. Comments never contribute, and nothing
+// from the effect's project is imported or executed.
+//
+// A value that only exists at run time — a spread, an `Array.from`, a call, a
+// reference to another binding such as `stdEnums.x` — cannot be read this way.
+// Such a value is left out and the definition is marked `partial`, with a
+// reason naming the path, so a caller never mistakes an incomplete projection
+// for the whole definition.
+
+type Node = { type: string; start: number; end: number; [key: string]: any }
+
+class Unreadable {
+  constructor(readonly reason: string) {}
+}
 
 export function parseDefinitionJs(filePath: string, effectDir: string): EffectDefinition {
   const source = readFileSync(filePath, 'utf-8')
+  const reasons: string[] = []
 
-  const func = extractString(source, /func\s*[:=]\s*['"](\w+)['"]/) || 'unknown'
-  const name = extractQuotedValue(source, 'name')
-  const namespace = extractString(source, /namespace\s*[:=]\s*['"](\w+)['"]/)
-  const description = extractQuotedValue(source, 'description')
-  const starter = /starter\s*[:=]\s*true/.test(source) ? true : /starter\s*[:=]\s*false/.test(source) ? false : undefined
-
-  // Extract tags
-  const tagsMatch = source.match(/tags\s*[:=]\s*\[([^\]]+)\]/)
-  const tags = tagsMatch
-    ? tagsMatch[1].split(',').map(t => t.trim().replace(/['"]/g, '')).filter(Boolean)
-    : undefined
-
-  // Extract passes - look for program references
-  const passes: EffectDefinition['passes'] = []
-  const passRegex = /program:\s*['"](\w+)['"]/g
-  let match
-  while ((match = passRegex.exec(source)) !== null) {
-    passes.push({ program: match[1] })
-  }
-  if (passes.length === 0) {
-    passes.push({ program: 'main' })
+  let ast: Node
+  try {
+    ast = parse(source, { ecmaVersion: 'latest', sourceType: 'module' }) as unknown as Node
+  } catch (err) {
+    return {
+      func: 'unknown',
+      globals: {},
+      passes: [],
+      format: 'js',
+      effectDir,
+      partial: true,
+      partialReasons: [`definition.js does not parse: ${err instanceof Error ? err.message : String(err)}`],
+    }
   }
 
-  // Extract globals with type info. Use balanced-brace slicing so a spec that
-  // contains a nested object (e.g. a `choices` map) is captured whole instead
-  // of being truncated at the first inner `}`.
+  const props = findConfig(ast, reasons)
+  if (!props) {
+    return {
+      func: 'unknown',
+      globals: {},
+      passes: [],
+      format: 'js',
+      effectDir,
+      partial: true,
+      partialReasons: ['no effect config (an object literal or class fields with a func, globals or passes key) was found'],
+    }
+  }
+
+  const read = (key: string): unknown => {
+    const node = props.get(key)
+    if (!node) return undefined
+    return readValue(node, key, reasons)
+  }
+
+  const func = asString(read('func')) || 'unknown'
+  const name = asString(read('name'))
+  const namespace = asString(read('namespace'))
+  const description = asString(read('description'))
+  const starterVal = read('starter')
+  const starter = typeof starterVal === 'boolean' ? starterVal : undefined
+  const tagsVal = read('tags')
+  const tags = Array.isArray(tagsVal) ? tagsVal.filter((t): t is string => typeof t === 'string') : undefined
+
   const globals: EffectDefinition['globals'] = {}
-  const globalsKey = source.match(/globals\s*[:=]\s*\{/)
-  const globalsText = globalsKey ? balancedBraceSlice(source, globalsKey.index! + globalsKey[0].length - 1) : null
-  if (globalsText) {
-    const body = globalsText.slice(1, -1)
-    const keyRegex = /(\w+)\s*:\s*\{/g
-    let kMatch
-    while ((kMatch = keyRegex.exec(body)) !== null) {
-      const name = kMatch[1]
-      const blockStart = kMatch.index + kMatch[0].length - 1
-      const block = balancedBraceSlice(body, blockStart)
-      if (!block) continue
-      // Skip past this spec's whole block so its nested keys aren't re-matched.
-      keyRegex.lastIndex = blockStart + block.length
-      // Extract fields from the spec's OWN keys only — strip nested objects so a
-      // colliding key inside e.g. a `choices` map isn't read as a spec field.
-      const ownFields = stripNestedObjects(block)
-      const uniform = extractString(ownFields, /uniform:\s*['"](\w+)['"]/)
-      if (!uniform) continue
-
-      const type = extractString(ownFields, /type:\s*['"](\w+)['"]/) || 'float'
-      const min = extractNumber(ownFields, /min:\s*([-\d.]+)/)
-      const max = extractNumber(ownFields, /max:\s*([-\d.]+)/)
-      const step = extractNumber(ownFields, /step:\s*([-\d.]+)/)
-      const defaultVal = extractNumber(ownFields, /default:\s*([-\d.]+)/)
-
-      globals[name] = {
-        name,
-        type: type as EffectUniform['type'],
-        uniform,
-        ...(defaultVal !== undefined && { default: defaultVal }),
-        ...(min !== undefined && { min }),
-        ...(max !== undefined && { max }),
-        ...(step !== undefined && { step }),
+  const globalsNode = props.get('globals')
+  if (globalsNode) {
+    if (globalsNode.type !== 'ObjectExpression') {
+      reasons.push(`globals: ${describe(globalsNode)} is computed at run time`)
+    } else {
+      for (const [key, specNode] of objectProperties(globalsNode, 'globals', reasons)) {
+        const spec = readValue(specNode, `globals.${key}`, reasons)
+        if (spec && typeof spec === 'object' && !Array.isArray(spec)) {
+          globals[key] = normalizeGlobal(key, spec as Record<string, unknown>)
+        }
       }
     }
+  }
+
+  let passes: EffectDefinition['passes'] = []
+  const passesNode = props.get('passes')
+  if (!passesNode) {
+    passes = [{ program: 'main' }]
+  } else if (passesNode.type !== 'ArrayExpression') {
+    reasons.push(`passes: ${describe(passesNode)} is computed at run time`)
+  } else {
+    passesNode.elements.forEach((el: Node | null, i: number) => {
+      if (!el) return
+      if (el.type === 'SpreadElement') {
+        reasons.push(`passes[${i}]: spread of ${describe(el.argument)} is computed at run time`)
+        return
+      }
+      const pass = readValue(el, `passes[${i}]`, reasons)
+      if (pass && typeof pass === 'object' && !Array.isArray(pass)) {
+        passes.push(normalizePass(pass as Record<string, unknown>))
+      }
+    })
   }
 
   return {
@@ -79,66 +115,164 @@ export function parseDefinitionJs(filePath: string, effectDir: string): EffectDe
     passes,
     format: 'js',
     effectDir,
+    ...(reasons.length > 0 && { partial: true, partialReasons: reasons }),
   }
 }
 
-function extractString(source: string, regex: RegExp): string | undefined {
-  const match = source.match(regex)
-  return match ? match[1] : undefined
-}
-
-// Extract a quoted value (`key: '...'` or `key: "..."`). The opening quote is
-// captured and matched as the closing quote via backreference, so an apostrophe
-// inside a double-quoted string (or a quote inside a single-quoted string) does
-// not truncate the value. `\b<key>` avoids matching inside a longer key (e.g.
-// `filename` vs `name`). The body uses non-overlapping alternatives — `\\.` for
-// an escaped char, `[^\\\r\n]` for any other same-line char — with a lazy
-// quantifier, so matching is linear (no catastrophic backtracking) and confined
-// to a single line. Escaped quotes/backslashes are unescaped in the result.
-function extractQuotedValue(source: string, key: string): string | undefined {
-  const re = new RegExp(`\\b${key}\\s*[:=]\\s*(['"])((?:\\\\.|[^\\\\\\r\\n])*?)\\1`)
-  const match = source.match(re)
-  return match ? match[2].replace(/\\(['"\\])/g, '$1') : undefined
-}
-
-// Return the substring from the brace at `openIndex` through its matching close
-// brace (inclusive), or null if unbalanced. Does not account for braces inside
-// string literals, which do not occur in these spec blocks in practice.
-function balancedBraceSlice(s: string, openIndex: number): string | null {
-  let depth = 0
-  for (let i = openIndex; i < s.length; i++) {
-    const ch = s[i]
-    if (ch === '{') depth++
-    else if (ch === '}') {
-      depth--
-      if (depth === 0) return s.slice(openIndex, i + 1)
+// The config is the first object literal or class body, in source order, that
+// carries one of the keys every effect config has. Class bodies contribute
+// their instance fields (`func = 'noise'`), the form several effects use
+// instead of passing an object to `super()`.
+function findConfig(ast: Node, reasons: string[]): Map<string, Node> | null {
+  let found: Node | null = null
+  walk(ast, node => {
+    if (found && found.start <= node.start) return
+    let keys: Array<string | undefined>
+    if (node.type === 'ObjectExpression') {
+      keys = node.properties
+        .filter((p: Node) => p.type === 'Property' && !p.computed)
+        .map((p: Node) => propertyKey(p))
+    } else if (node.type === 'ClassBody') {
+      keys = node.body
+        .filter((p: Node) => p.type === 'PropertyDefinition' && !p.static && !p.computed && p.value)
+        .map((p: Node) => propertyKey(p))
+    } else {
+      return
     }
-  }
-  return null
-}
-
-// Drop nested objects from a brace-delimited block, keeping only its own
-// (depth-1) keys/values. Lets field extractors read a spec's own fields without
-// picking up colliding keys from a nested object (e.g. a `choices` map).
-function stripNestedObjects(block: string): string {
-  let depth = 0
-  let out = ''
-  for (let i = 0; i < block.length; i++) {
-    const ch = block[i]
-    if (ch === '{') {
-      depth++
-      if (depth <= 1) out += ch
-    } else if (ch === '}') {
-      if (depth <= 1) out += ch
-      depth--
-    } else if (depth <= 1) {
-      out += ch
-    }
+    if (keys.includes('func') || (keys.includes('globals') && keys.includes('passes'))) found = node
+  })
+  if (!found) return null
+  const config = found as Node
+  if (config.type === 'ObjectExpression') return objectProperties(config, '', reasons)
+  const out = new Map<string, Node>()
+  for (const p of config.body as Node[]) {
+    if (p.type !== 'PropertyDefinition' || p.static || p.computed || !p.value) continue
+    const key = propertyKey(p)
+    if (key !== undefined) out.set(key, p.value)
   }
   return out
 }
 
-function extractNumber(source: string, regex: RegExp): number | undefined {
-  const match = source.match(regex)
-  return match ? parseFloat(match[1]) : undefined
+function walk(node: Node, visit: (n: Node) => void): void {
+  visit(node)
+  for (const value of Object.values(node)) {
+    if (Array.isArray(value)) {
+      for (const child of value) if (child && typeof child.type === 'string') walk(child, visit)
+    } else if (value && typeof value === 'object' && typeof (value as Node).type === 'string') {
+      walk(value as Node, visit)
+    }
+  }
+}
+
+function propertyKey(p: Node): string | undefined {
+  if (p.key.type === 'Identifier' || p.key.type === 'PrivateIdentifier') return p.key.name
+  if (p.key.type === 'Literal') return String(p.key.value)
+  return undefined
+}
+
+function objectProperties(obj: Node, path: string, reasons: string[]): Map<string, Node> {
+  const out = new Map<string, Node>()
+  for (const p of obj.properties as Node[]) {
+    const where = path ? `${path}.` : ''
+    if (p.type === 'SpreadElement') {
+      reasons.push(`${path || 'config'}: spread of ${describe(p.argument)} is computed at run time`)
+      continue
+    }
+    const key = p.computed ? undefined : propertyKey(p)
+    if (key === undefined) {
+      reasons.push(`${where}[${describe(p.key)}]: computed key`)
+      continue
+    }
+    if (p.kind !== 'init' || p.method) continue
+    out.set(key, p.value)
+  }
+  return out
+}
+
+function readValue(node: Node, path: string, reasons: string[]): unknown {
+  const value = evaluate(node, path, reasons)
+  if (value instanceof Unreadable) {
+    reasons.push(`${path}: ${value.reason}`)
+    return undefined
+  }
+  return value
+}
+
+// Literal-only evaluation. Object members that cannot be read are dropped and
+// reported individually, so one computed field does not hide its siblings.
+function evaluate(node: Node, path: string, reasons: string[]): unknown {
+  switch (node.type) {
+    case 'Literal':
+      if (node.regex) return new Unreadable('regular expression literal')
+      return node.value
+    case 'TemplateLiteral':
+      if (node.expressions.length > 0) return new Unreadable('template literal with expressions')
+      return node.quasis.map((q: Node) => q.value.cooked).join('')
+    case 'Identifier':
+      if (node.name === 'undefined') return undefined
+      if (node.name === 'Infinity') return Infinity
+      if (node.name === 'NaN') return NaN
+      return new Unreadable(`references ${node.name}`)
+    case 'UnaryExpression': {
+      const arg = evaluate(node.argument, path, reasons)
+      if (arg instanceof Unreadable) return arg
+      if (node.operator === '-' && typeof arg === 'number') return -arg
+      if (node.operator === '+' && typeof arg === 'number') return +arg
+      if (node.operator === '!') return !arg
+      return new Unreadable(`unary ${node.operator}`)
+    }
+    case 'BinaryExpression': {
+      const left = evaluate(node.left, path, reasons)
+      if (left instanceof Unreadable) return left
+      const right = evaluate(node.right, path, reasons)
+      if (right instanceof Unreadable) return right
+      if (typeof left === 'number' && typeof right === 'number') {
+        switch (node.operator) {
+          case '+': return left + right
+          case '-': return left - right
+          case '*': return left * right
+          case '/': return left / right
+        }
+      }
+      if (node.operator === '+' && typeof left === 'string' && typeof right === 'string') return left + right
+      return new Unreadable(`expression ${describe(node)}`)
+    }
+    case 'ArrayExpression': {
+      const out: unknown[] = []
+      for (const [i, el] of (node.elements as Array<Node | null>).entries()) {
+        if (!el) { out.push(undefined); continue }
+        if (el.type === 'SpreadElement') return new Unreadable(`spread of ${describe(el.argument)} at [${i}]`)
+        const v = evaluate(el, `${path}[${i}]`, reasons)
+        if (v instanceof Unreadable) return v
+        out.push(v)
+      }
+      return out
+    }
+    case 'ObjectExpression': {
+      const out: Record<string, unknown> = {}
+      for (const [key, valueNode] of objectProperties(node, path, reasons)) {
+        const v = readValue(valueNode, `${path}.${key}`, reasons)
+        if (v !== undefined) out[key] = v
+      }
+      return out
+    }
+    default:
+      return new Unreadable(`${describe(node)} is computed at run time`)
+  }
+}
+
+function describe(node: Node): string {
+  switch (node.type) {
+    case 'Identifier': return node.name
+    case 'MemberExpression': {
+      const prop = node.computed ? '[…]' : `.${node.property.name}`
+      return `${describe(node.object)}${prop}`
+    }
+    case 'CallExpression': return `${describe(node.callee)}(…)`
+    default: return node.type
+  }
+}
+
+function asString(v: unknown): string | undefined {
+  return typeof v === 'string' ? v : undefined
 }

@@ -1,31 +1,16 @@
-import type { EffectDefinition, EffectUniform } from './types.js'
+import type { EffectDefinition } from './types.js'
+import { normalizeGlobal, normalizePass } from './normalize.js'
 
 export function parseDefinitionJson(json: Record<string, unknown>, effectDir: string): EffectDefinition {
   const globals: EffectDefinition['globals'] = {}
   const rawGlobals = (json.globals || {}) as Record<string, Record<string, unknown>>
 
   for (const [key, spec] of Object.entries(rawGlobals)) {
-    globals[key] = {
-      name: key,
-      type: (spec.type as EffectUniform['type']) || 'float',
-      uniform: (spec.uniform as string) || key,
-      default: spec.default as number | number[] | undefined,
-      min: spec.min as number | undefined,
-      max: spec.max as number | undefined,
-      step: spec.step as number | undefined,
-      choices: spec.choices as Record<string, number> | undefined,
-      control: spec.control as boolean | undefined,
-    }
+    globals[key] = normalizeGlobal(key, spec)
   }
 
   const rawPasses = (json.passes || []) as Array<Record<string, unknown>>
-  const passes: EffectDefinition['passes'] = rawPasses.map(p => ({
-    name: p.name as string | undefined,
-    program: (p.program as string) || 'main',
-    type: p.type as 'render' | 'compute' | 'gpgpu' | undefined,
-    inputs: p.inputs as Record<string, string> | undefined,
-    outputs: p.outputs as Record<string, string> | undefined,
-  }))
+  const passes: EffectDefinition['passes'] = rawPasses.map(normalizePass)
 
   return {
     func: json.func as string,

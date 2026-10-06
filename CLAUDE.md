@@ -14,7 +14,7 @@ npm test         # vitest
 - `src/index.ts` — Entry point. Registers 18 tools with McpServer, starts stdio transport.
 - `src/config.ts` — Config from env vars (SHADE_EFFECTS_DIR, SHADE_VIEWER_PORT, SHADE_VIEWER_ROOT, SHADE_VIEWER_PATH, SHADE_BACKEND, SHADE_PROJECT_ROOT, SHADE_GLOBALS_PREFIX).
 - `src/ai/provider.ts` — AI abstraction. Anthropic-first, OpenAI fallback. Reads API keys from env or dotfiles.
-- `src/formats/` — Effect definition parsers. Auto-detects definition.json (preferred) vs definition.js (regex extraction).
+- `src/formats/` — Effect definition parsers. Auto-detects definition.json (preferred) vs definition.js (acorn AST, literal values only; marks the result `partial` where a value is computed at run time).
 - `src/harness/` — Browser automation. `server-manager.ts` (ref-counted HTTP server), `browser-session.ts` (Playwright lifecycle), `pixel-reader.ts` (image metrics).
 - `src/tools/browser/` — 8 browser-based tools (compile, render, describe, benchmark, uniforms, passthrough, parity, dsl).
 - `src/tools/analysis/` — 4 tools analyze files on disk (structure, alg-equiv, compare, branching).

@@ -31,7 +31,7 @@ export default defineConfig({
   // playwright, and it defers the two AI SDKs behind a dynamic import so a
   // run without AI keys never reaches them). scripts/check-dist-externals.mjs
   // holds that contract.
-  noExternal: ['zod'],
+  noExternal: ['zod', 'acorn'],
   // Declarations are emitted by `tsc --emitDeclarationOnly`, not by tsup.
   //
   // tsup generates .d.ts via rollup-plugin-dts, which imports the TypeScript

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { parseDefinitionJs } from '../formats/index.js'
+import { parseDefinitionJs, parseDefinitionJson } from '../formats/index.js'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -167,5 +167,118 @@ describe('parseDefinitionJs', () => {
     }`)
     const def = parseDefinitionJs(file, dir)
     expect(def.name).toBeUndefined()
+  })
+
+  // Issue #30: the projection used to drop define-only globals, most spec
+  // fields and computed passes, and count `program:` literals in comments.
+  it('keeps every global and field, and marks computed passes as partial', () => {
+    const { file, dir } = writeDef(`export default new Effect({
+      name: 'Example', namespace: 'filter', func: 'example',
+      globals: {
+        noiseType: { type: 'int', define: 'NOISE_TYPE', default: 1, choices: { simplex: 0, value: 1 } },
+        amount: { type: 'float', uniform: 'amount', default: 0.5, min: 0, max: 1, ui: { label: 'Amount' } },
+        enabled: { type: 'boolean', uniform: 'enabled', default: true }
+      },
+      passes: [
+        { name: 'prep', program: 'prep', inputs: { inputTex: 'inputTex' }, outputs: { fragColor: 'tmp0' } },
+        ...Array.from({ length: 3 }, (_, i) => ({ name: 'blur' + i, program: i % 2 ? 'blurV' : 'blurH', inputs: { inputTex: 'tmp0' }, outputs: { fragColor: 'tmp0' } })),
+        { name: 'final', program: 'final', inputs: { inputTex: 'tmp0' }, outputs: { fragColor: 'outputTex' } }
+      ]
+    })`)
+    const def = parseDefinitionJs(file, dir)
+    expect(def.globals.noiseType).toMatchObject({ type: 'int', define: 'NOISE_TYPE', default: 1, choices: { simplex: 0, value: 1 } })
+    expect(def.globals.amount.ui).toEqual({ label: 'Amount' })
+    expect(def.globals.enabled.default).toBe(true)
+    expect(def.passes.map(p => p.name)).toEqual(['prep', 'final'])
+    expect(def.passes[0]).toEqual({ name: 'prep', program: 'prep', inputs: { inputTex: 'inputTex' }, outputs: { fragColor: 'tmp0' } })
+    expect(def.partial).toBe(true)
+    expect(def.partialReasons).toEqual([expect.stringMatching(/^passes\[1\]: spread of Array\.from\(…\)/)])
+  })
+
+  it('reads the config passed to super() in a class that extends Effect', () => {
+    const { file, dir } = writeDef(`import { Effect } from '../../../src/runtime/effect.js'
+    class Fibers extends Effect {
+      constructor() {
+        super({ name: 'Fibers', namespace: 'filter', func: 'fibers', tags: ['noise'],
+          globals: { seed: { type: 'int', default: 1, uniform: 'seed', min: 1, max: 100 } },
+          passes: [{ name: 'render', program: 'fibers', inputs: { inputTex: 'inputTex' }, outputs: { fragColor: 'outputTex' } }] })
+      }
+      async asyncInit() { const program = 'notAPass'; return program }
+    }
+    export default new Fibers()`)
+    const def = parseDefinitionJs(file, dir)
+    expect(def.func).toBe('fibers')
+    expect(def.tags).toEqual(['noise'])
+    expect(def.passes.map(p => p.program)).toEqual(['fibers'])
+    expect(def.partial).toBeUndefined()
+  })
+
+  it('reads the class fields of a class that extends Effect', () => {
+    const { file, dir } = writeDef(`import { Effect } from '../../../src/runtime/effect.js'
+    export default class Noise extends Effect {
+      static helper = { func: 'notTheConfig' }
+      name = "Noise"
+      namespace = "classicNoisedeck"
+      func = "noise"
+      globals = {
+        noiseType: { type: "int", default: 10, define: "NOISE_TYPE", choices: { cubic: 3, simplex: 10 } },
+        speed: { type: "float", default: 1, uniform: "speed", min: 0, max: 5 }
+      }
+      passes = [{ name: "render", program: "noise", inputs: {}, outputs: { fragColor: "outputTex" } }]
+    }`)
+    const def = parseDefinitionJs(file, dir)
+    expect(def.func).toBe('noise')
+    expect(Object.keys(def.globals)).toEqual(['noiseType', 'speed'])
+    expect(def.globals.noiseType.define).toBe('NOISE_TYPE')
+    expect(def.passes).toEqual([{ name: 'render', program: 'noise', inputs: {}, outputs: { fragColor: 'outputTex' } }])
+    expect(def.partial).toBeUndefined()
+  })
+
+  it('does not count a program literal inside a comment as a pass', () => {
+    const { file, dir } = writeDef(`export default {
+      func: 'x',
+      globals: {},
+      // passes used to include { program: 'oldPass' }
+      /* program: 'another' */
+      passes: [{ program: 'main' }]
+    }`)
+    const def = parseDefinitionJs(file, dir)
+    expect(def.passes).toEqual([{ program: 'main' }])
+  })
+
+  it('keeps sibling fields and names the path when a value references another binding', () => {
+    const { file, dir } = writeDef(`import { stdEnums } from '../../../src/lang/std_enums.js'
+    export default new Effect({
+      func: 'osc',
+      globals: { kind: { type: 'int', uniform: 'kind', default: 0, choices: stdEnums.oscKind } },
+      passes: [{ program: 'osc' }]
+    })`)
+    const def = parseDefinitionJs(file, dir)
+    expect(def.globals.kind).toMatchObject({ type: 'int', uniform: 'kind', default: 0 })
+    expect(def.globals.kind.choices).toBeUndefined()
+    expect(def.partial).toBe(true)
+    expect(def.partialReasons).toEqual(['globals.kind.choices: stdEnums.oscKind is computed at run time'])
+  })
+
+  it('returns the same globals and passes as parseDefinitionJson for an equivalent definition', () => {
+    const config = {
+      func: 'eq', name: 'Eq', namespace: 'filter', description: 'd', tags: ['a'],
+      globals: {
+        mode: { type: 'int', define: 'MODE', default: 2, choices: { a: 0, b: 2 } },
+        amount: { type: 'float', uniform: 'amount', default: 0.25, min: -1, max: 1, step: 0.01, ui: { label: 'Amount', control: 'slider' } },
+        color: { type: 'vec3', uniform: 'color', default: [1, 0.5, 0] },
+        on: { type: 'boolean', uniform: 'on', default: false, control: false },
+      },
+      passes: [
+        { name: 'a', program: 'a', inputs: { inputTex: 'inputTex' }, outputs: { fragColor: 't0' } },
+        { name: 'b', program: 'b', type: 'compute', inputs: { inputTex: 't0' }, outputs: { fragColor: 'outputTex' } },
+      ],
+    }
+    const { file, dir } = writeDef(`export default new Effect(${JSON.stringify(config)})`)
+    const js = parseDefinitionJs(file, dir)
+    const json = parseDefinitionJson(config, dir)
+    expect(js.globals).toEqual(json.globals)
+    expect(js.passes).toEqual(json.passes)
+    expect(js.partial).toBeUndefined()
   })
 })

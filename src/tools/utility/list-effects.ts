@@ -25,6 +25,7 @@ export function registerListEffects(server: McpServer): void {
           description: e.def.description || '',
           tags: e.def.tags || [],
           passes: e.def.passes.length,
+          ...(e.def.partial && { partial: true }),
         })),
       }
       return toolResult(output)

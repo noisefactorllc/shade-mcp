@@ -3,6 +3,30 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`definition.js` effects are read completely (#30).** `parseDefinitionJs`
+  projected the file with regular expressions: it dropped every global
+  without a `uniform` key (compile-time `define` globals), read only `type`,
+  `min`, `max`, `step` and a numeric `default`, counted one pass per
+  `program:` literal anywhere in the source (comments included), and never
+  read pass `name`, `type`, `inputs` or `outputs`. Measured against
+  noisemaker's 210 effects, it lost data on all of them. The file is now
+  parsed with acorn and the effect config is read as literal values,
+  whether it is passed to `new Effect(...)` or `super(...)`, default-exported,
+  or written as class fields. Nothing is imported or executed. A
+  `definition.js` and its equivalent `definition.json` now yield the same
+  `globals` and `passes`, and both keep `define` and `ui`. Against
+  noisemaker's 210 effects, 208 now match the live module's passes and
+  globals exactly.
+- **A projection that is not complete says so.** A value that only exists
+  at run time (a spread, `Array.from`, `flatMap`, a reference to another
+  binding) is left out, and the definition carries `partial: true` with
+  `partialReasons` naming each path. `analyzeEffect` returns both, and
+  `listEffects` marks such effects `partial`.
+
 ## [0.3.3] — 2026-10-06
 
 ### Fixed

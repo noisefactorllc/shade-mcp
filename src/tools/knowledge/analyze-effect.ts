@@ -56,6 +56,7 @@ export function registerAnalyzeEffect(server: McpServer): void {
         globals: def.globals,
         passes: def.passes,
         format: def.format,
+        ...(def.partial && { partial: true, partialReasons: def.partialReasons }),
         shaders,
       }
 
