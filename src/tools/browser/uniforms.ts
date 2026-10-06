@@ -169,6 +169,15 @@ export async function testUniformResponsiveness(
         else if (pipeline.globalUniforms) pipeline.globalUniforms[uniformName] = value
       }
       const defaultOf = (spec: any) => spec.default ?? spec.min
+      // The values the loaded program set (a defaultProgram can pass
+      // sharpen(amount: 5)): the baseline is captured at these, so every
+      // control is restored to them, not to its spec default.
+      const initial: Record<string, unknown> = {}
+      for (const [param, spec] of Object.entries(effectGlobals) as any[]) {
+        const current = spec.uniform ? pipeline.globalUniforms?.[spec.uniform] : undefined
+        initial[param] = typeof current === 'number' || Array.isArray(current) ? current : defaultOf(spec)
+      }
+      const startOf = (param: string) => initial[param]
       // Values compare as the noisemaker UI compares them: vectors per
       // component, numbers within 1e-4.
       const same = (a: any, b: any): boolean => {
@@ -218,7 +227,7 @@ export async function testUniformResponsiveness(
         if (cond.lte !== undefined) candidates.push(halfway(cond.lte, lo), cond.lte)
         if (cond.neq !== undefined || Array.isArray(cond.notIn)) {
           const banned = [...(cond.neq !== undefined ? [cond.neq] : []), ...(cond.notIn || [])]
-          const base = defaultOf(gate)
+          const base = startOf(cond.param)
           // A vector gate (a tint that must differ from neutral) opens with
           // each component moved a quarter of the range toward the far end.
           const options = Array.isArray(base)
@@ -249,22 +258,89 @@ export async function testUniformResponsiveness(
       const baseline = await captureAll()
       if (!baseline) return { status: 'error', tested_uniforms: [], backend: backendName, details: `Failed to capture baseline on ${backendName}` }
 
+      // A changed param can restart an async CPU overlay (fibers, scratches);
+      // wait for it before capturing, as the effect switch does.
+      const settle = async () => {
+        if (typeof pipeline.whenAsyncInitsSettled === 'function') await pipeline.whenAsyncInitsSettled()
+      }
+      const measurable = (spec: any) =>
+        spec.uniform && spec.define === undefined && spec.type !== 'boolean' && spec.type !== 'button' &&
+        typeof spec.min === 'number' && typeof spec.max === 'number' && spec.min !== spec.max
+      const round = (spec: any, v: number) => (spec.type === 'int' ? Math.round(v) : v)
+      // Two test values, never the default: the farther of the 25% and 75%
+      // points, then a point at 38.2% of the range, which does not line up
+      // with the right angles and halves a symmetric input is invariant to.
+      const testValuesOf = (param: string, spec: any) => {
+        const defaultVal = startOf(param) as number
+        const range = spec.max - spec.min
+        const quarter = round(spec, spec.min + range * 0.25), threeQuarter = round(spec, spec.min + range * 0.75)
+        const far = Math.abs(threeQuarter - defaultVal) > Math.abs(quarter - defaultVal) ? threeQuarter : quarter
+        const values = [far, round(spec, spec.min + range * 0.381966)]
+          .filter((v, i, all) => v !== defaultVal && all.indexOf(v) === i)
+        return values.length > 0 ? values : [far]
+      }
+
+      type Capture = Array<{ mean: number[]; samples: number[] }>
+      const compare = (reference: Capture, test: Capture) => {
+        let luma = 0, channel = 0, pixel = 0
+        for (let i = 0; i < CAPTURE_TIMES.length; i++) {
+          const a = reference[i].mean, b = test[i].mean
+          luma = Math.max(luma, Math.abs((b[0] + b[1] + b[2]) / 3 - (a[0] + a[1] + a[2]) / 3))
+          channel = Math.max(channel, Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]), Math.abs(b[2] - a[2]), Math.abs(b[3] - a[3]))
+          const sa = reference[i].samples, sb = test[i].samples
+          if (sa.length === sb.length && sa.length > 0) {
+            let sum = 0
+            for (let k = 0; k < sa.length; k++) sum += Math.abs(sb[k] - sa[k])
+            pixel = Math.max(pixel, sum / sa.length)
+          }
+        }
+        return { luma, channel, pixel }
+      }
+      // This function is serialized into the page: the threshold must stay a
+      // literal, kept in sync with UNIFORM_RESPONSE_THRESHOLD.
+      const responds = (d: { luma: number; channel: number; pixel: number }) => d.luma > 0.002 || d.channel > 0.002 || d.pixel > 0.002
+
+      // Set the given params, capture a reference, then try the control's
+      // test values against it. Returns the strongest response.
+      async function measure(spec: any, setup: Record<string, unknown>, testValues: number[]) {
+        for (const [param, value] of Object.entries(setup)) setValue(effectGlobals[param].uniform, toUniform(effectGlobals[param], value))
+        await settle()
+        const reference = Object.keys(setup).length > 0 ? await captureAll() : baseline
+        let best: { luma: number; channel: number; pixel: number } | null = null
+        let bestValue = testValues[0]
+        for (const value of testValues) {
+          setValue(spec.uniform, value)
+          await settle()
+          const test = reference ? await captureAll() : null
+          if (!test || !reference) return null
+          const d = compare(reference, test)
+          if (!best || d.pixel + d.channel > best.pixel + best.channel) { best = d; bestValue = value }
+          if (responds(d)) break
+        }
+        return best ? { ...best, value: bestValue } : null
+      }
+      async function restore(names: string[]) {
+        for (const param of names) setValue(effectGlobals[param].uniform, toUniform(effectGlobals[param], startOf(param)))
+        await settle()
+      }
+
       for (const [name, spec] of Object.entries(effectGlobals) as any[]) {
         if (!spec.uniform) continue
         if (spec.type === 'boolean' || spec.type === 'button') continue
         if (typeof spec.min !== 'number' || typeof spec.max !== 'number' || spec.min === spec.max) continue
 
-        const defaultVal = defaultOf(spec)
-        const range = spec.max - spec.min
-        // Two test values, never the default: the farther of the 25% and 75%
-        // points, then a point at 38.2% of the range, which does not line up
-        // with the right angles and halves a symmetric input is invariant to.
-        const round = (v: number) => (spec.type === 'int' ? Math.round(v) : v)
-        const quarter = round(spec.min + range * 0.25), threeQuarter = round(spec.min + range * 0.75)
-        const far = Math.abs(threeQuarter - defaultVal) > Math.abs(quarter - defaultVal) ? threeQuarter : quarter
-        const testValues = [far, round(spec.min + range * 0.381966)]
-          .filter((v, i, all) => v !== defaultVal && all.indexOf(v) === i)
-        let testVal = testValues[0] ?? far
+        const defaultVal = startOf(name)
+        const testValues = testValuesOf(name, spec)
+
+        // A compile-time define changes only on recompile, never through
+        // setUniform; report it rather than measure it.
+        if (spec.define !== undefined) {
+          gatedNames.push(name)
+          tested.push(`${name}:gated`)
+          uniforms.push({ name, uniform: spec.uniform, default_value: defaultVal, test_value: testValues[0],
+            luma_diff: null, max_channel_diff: null, responds: null, gated: true, define: spec.define })
+          continue
+        }
 
         // Enable a gated control first; a gate that cannot be opened at run
         // time leaves the control untestable here, reported as gated.
@@ -273,65 +349,63 @@ export async function testUniformResponsiveness(
         if (gate !== undefined && !satisfy(gate, assign)) {
           gatedNames.push(name)
           tested.push(`${name}:gated`)
-          uniforms.push({ name, uniform: spec.uniform, default_value: defaultVal, test_value: testVal,
+          uniforms.push({ name, uniform: spec.uniform, default_value: defaultVal, test_value: testValues[0],
             luma_diff: null, max_channel_diff: null, responds: null, gated: true, enabled_by: gate })
           continue
         }
-        for (const [param, value] of Object.entries(assign)) setValue(effectGlobals[param].uniform, toUniform(effectGlobals[param], value))
-        const gateValues = Object.keys(assign).length > 0 ? assign : null
 
-        type Capture = Array<{ mean: number[]; samples: number[] }>
-        const compare = (reference: Capture, test: Capture) => {
-          let luma = 0, channel = 0, pixel = 0
-          for (let i = 0; i < CAPTURE_TIMES.length; i++) {
-            const a = reference[i].mean, b = test[i].mean
-            luma = Math.max(luma, Math.abs((b[0] + b[1] + b[2]) / 3 - (a[0] + a[1] + a[2]) / 3))
-            channel = Math.max(channel, Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]), Math.abs(b[2] - a[2]), Math.abs(b[3] - a[3]))
-            const sa = reference[i].samples, sb = test[i].samples
-            if (sa.length === sb.length && sa.length > 0) {
-              let sum = 0
-              for (let k = 0; k < sa.length; k++) sum += Math.abs(sb[k] - sa[k])
-              pixel = Math.max(pixel, sum / sa.length)
-            }
-          }
-          return { luma, channel, pixel }
-        }
-
-        let reference: Capture | null = baseline
-        let measured: { luma: number; channel: number; pixel: number } | null = null
+        let measured: Awaited<ReturnType<typeof measure>> = null
+        let context: Record<string, unknown> | null = null
         let measureError: string | null = null
         try {
-          if (gateValues) reference = await captureAll()
-          for (const value of testValues) {
-            setValue(spec.uniform, value)
-            const test = reference ? await captureAll() : null
-            if (!test || !reference) { measured = null; break }
-            const d = compare(reference, test)
-            if (!measured || d.pixel + d.channel > measured.pixel + measured.channel) { measured = d; testVal = value }
-            // This function is serialized into the page: the threshold must
-            // stay a literal, kept in sync with UNIFORM_RESPONSE_THRESHOLD.
-            if (d.luma > 0.002 || d.channel > 0.002 || d.pixel > 0.002) break
+          measured = await measure(spec, assign, testValues)
+          await restore([name, ...Object.keys(assign)])
+          // A control can act only in combination with others (a range that
+          // selects what an adjustment changes, a transform of a feedback
+          // that is mixed out at defaults). Try once more with every other
+          // control at its first test value (gated ones with their gates
+          // opened), the control's own gate on top.
+          if (measured && !responds(measured)) {
+            const varied: Record<string, unknown> = {}
+            for (const [other, otherSpec] of Object.entries(effectGlobals) as any[]) {
+              if (other === name || !measurable(otherSpec)) continue
+              // A gated other (an adjustment behind an enable toggle) joins
+              // the context with its gate opened, when the gate can be.
+              if (otherSpec.ui?.enabledBy !== undefined) {
+                const trial = { ...varied }
+                if (!satisfy(otherSpec.ui.enabledBy, trial)) continue
+                Object.assign(varied, trial)
+              }
+              if (!(other in varied)) varied[other] = testValuesOf(other, otherSpec)[0]
+            }
+            Object.assign(varied, assign)
+            if (Object.keys(varied).length > Object.keys(assign).length) {
+              const retry = await measure(spec, varied, testValues)
+              await restore([name, ...Object.keys(varied)])
+              if (retry && responds(retry)) { measured = retry; context = varied }
+            }
           }
         } catch (err) {
           measureError = err instanceof Error ? err.message : String(err)
           measured = null
+          await restore([name, ...Object.keys(assign)])
         }
 
         if (measured) {
-          const lumaDiff = measured.luma, maxChannelDiff = measured.channel, pixelDiff = measured.pixel
-          const responds = lumaDiff > 0.002 || maxChannelDiff > 0.002 || pixelDiff > 0.002
+          const ok = responds(measured)
           uniforms.push({
             name,
             uniform: spec.uniform,
             default_value: defaultVal,
-            test_value: testVal,
-            luma_diff: lumaDiff,
-            max_channel_diff: maxChannelDiff,
-            pixel_diff: pixelDiff,
-            responds,
-            ...(gateValues ? { enabled_with: gateValues } : {}),
+            test_value: measured.value,
+            luma_diff: measured.luma,
+            max_channel_diff: measured.channel,
+            pixel_diff: measured.pixel,
+            responds: ok,
+            ...(Object.keys(assign).length > 0 ? { enabled_with: assign } : {}),
+            ...(context ? { context } : {}),
           })
-          if (responds) {
+          if (ok) {
             tested.push(`${name}:pass`)
           } else {
             failedNames.push(name)
@@ -344,17 +418,13 @@ export async function testUniformResponsiveness(
             name,
             uniform: spec.uniform,
             default_value: defaultVal,
-            test_value: testVal,
+            test_value: testValues[0],
             luma_diff: null,
             max_channel_diff: null,
             responds: false,
             error: measureError ?? 'Failed to capture test render',
           })
         }
-
-        // Restore defaults, the gate params included.
-        setValue(spec.uniform, defaultVal)
-        for (const param of Object.keys(assign)) setValue(effectGlobals[param].uniform, toUniform(effectGlobals[param], defaultOf(effectGlobals[param])))
       }
 
       let status: string

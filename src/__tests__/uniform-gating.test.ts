@@ -195,6 +195,77 @@ describe('testUniformResponsiveness: controls inert at defaults', () => {
     expect(balance.enabled_with.tint).toEqual([0.75, 0.75, 0.75])
   })
 
+  it('reports a compile-time define as gated instead of measuring it', async () => {
+    const specs = {
+      amount: { uniform: 'u_amount', type: 'float', min: 0, max: 1, default: 0.5 },
+      border: { uniform: 'u_border', define: 'LP_BORDER', type: 'int', min: 0, max: 100, default: 0 },
+    }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v) => v.u_amount)
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    expect(result.status).toBe('ok')
+    expect(result.uniforms.find((u: any) => u.name === 'border')).toMatchObject({ gated: true, define: 'LP_BORDER', responds: null })
+  })
+
+  it('counts a control that acts only with another control changed, and names that context', async () => {
+    // Like grade's HSL range: it selects what the adjustment changes, so at a
+    // zero adjustment it does nothing.
+    const specs = {
+      adjust: { uniform: 'u_adjust', type: 'float', min: -1, max: 1, default: 0 },
+      range: { uniform: 'u_range', type: 'float', min: 0, max: 1, default: 0.5 },
+    }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v) => 0.4 + 0.3 * v.u_adjust * v.u_range)
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    expect(result.status).toBe('ok')
+    const range = result.uniforms.find((u: any) => u.name === 'range')
+    expect(range.responds).toBe(true)
+    expect(range.context).toEqual({ adjust: -0.5 })
+  })
+
+  it('opens the gates of other controls it varies for the context', async () => {
+    // Like grade: the hue range and the hue shift both sit behind hslEnable.
+    const specs = {
+      hslEnable: { uniform: 'u_enable', type: 'int', min: 0, max: 1, default: 0 },
+      hueShift: { uniform: 'u_shift', type: 'float', min: -1, max: 1, default: 0, ui: { enabledBy: 'hslEnable' } },
+      hueRange: { uniform: 'u_range', type: 'float', min: 0, max: 1, default: 0.5, ui: { enabledBy: 'hslEnable' } },
+    }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v) => 0.4 + (v.u_enable ? 0.3 * v.u_shift * v.u_range : 0))
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    const range = result.uniforms.find((u: any) => u.name === 'hueRange')
+    expect(range.responds).toBe(true)
+    expect(range.context).toMatchObject({ hslEnable: 1, hueShift: -0.5 })
+  })
+
+  it('waits for an async overlay to regenerate before capturing', async () => {
+    const specs = { density: { uniform: 'u_density', type: 'float', min: 0, max: 1, default: 0.5 } }
+    let drawn = 0.5
+    installFakeViewer(DEFAULT_GLOBALS, specs, () => 0.2 + 0.5 * drawn)
+    const w = (globalThis as any).window
+    const pipeline = w[DEFAULT_GLOBALS.renderingPipeline]
+    let pending: number | null = null
+    const set = pipeline.setUniform
+    pipeline.setUniform = (name: string, val: any) => { set(name, val); if (name === 'u_density') pending = val }
+    pipeline.whenAsyncInitsSettled = async () => { if (pending !== null) { drawn = pending; pending = null } }
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    expect(result.status).toBe('ok')
+  })
+
+  it('restores each control to the value the program set, not its spec default', async () => {
+    // A defaultProgram like sharpen(amount: 5): the baseline is captured at
+    // amount 0.9, so restoring to the spec default would make the inert
+    // control after it look responsive.
+    const specs = {
+      amount: { uniform: 'u_amount', type: 'float', min: 0, max: 1, default: 0.5 },
+      inert: { uniform: 'u_inert', type: 'float', min: 0, max: 1, default: 0.5 },
+    }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v) => v.u_amount)
+    const pipeline = (globalThis as any).window[DEFAULT_GLOBALS.renderingPipeline]
+    pipeline.setUniform('u_amount', 0.9)
+    pipeline.globalUniforms = { u_amount: 0.9, u_inert: 0.5 }
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    expect(result.uniforms.find((u: any) => u.name === 'amount')).toMatchObject({ default_value: 0.9, responds: true })
+    expect(result.uniforms.find((u: any) => u.name === 'inert').responds).toBe(false)
+  })
+
   it('still fails a control that is ungated and never moves the output', async () => {
     const specs = {
       amount: { uniform: 'u_amount', type: 'float', min: 0, max: 1, default: 0.5 },

@@ -171,8 +171,19 @@ export async function testNoPassthrough(
       // drift) can be the identity at t=0 and still modify its input.
       const COMPARE_TIMES = [0, 0.37]
       type Frame = { pixels: Uint8Array; width: number; height: number }
-      let worst: { meanDiff: number; changedFraction: number } | null = null
-      try {
+      type Measured = { meanDiff: number; changedFraction: number }
+      // A passthrough leaves nearly every pixel as it was: the mean
+      // difference stays within the threshold AND at most 1% of the sampled
+      // pixels change. A filter that subtly changes most pixels (a mild
+      // blur) modifies its input even when its mean difference is small.
+      const threshold = 0.01
+      const unchanged = (m: Measured) => m.meanDiff <= threshold && m.changedFraction <= threshold
+
+      // The largest output-to-input change over the compare times; an error
+      // result when a frame cannot be read.
+      const inputId: string = consumedInput.id
+      async function measure(): Promise<Measured | { error: Record<string, unknown> }> {
+        let worst: Measured | null = null
         for (const t of COMPARE_TIMES) {
           if (w[globals.setPausedTime]) w[globals.setPausedTime](t)
           let inputFrame: Frame | null = null
@@ -183,15 +194,15 @@ export async function testNoPassthrough(
           for (let attempt = 0; attempt < 6 && (!inputFrame || !outputFrame); attempt++) {
             renderer.render(t)
             renderer.render(t)
-            inputFrame = await readInput(consumedInput.id)
+            inputFrame = await readInput(inputId)
             outputFrame = await readOutput()
             if ((!inputFrame || !outputFrame) && attempt < 5) await new Promise((res) => setTimeout(res, 80))
           }
           if (!inputFrame) {
-            return { status: 'error', isFilterEffect: true, similarity: null, backend: backendName, inputTexture: consumedInput.id, details: `Failed to read input texture ${consumedInput.id} on ${backendName}` }
+            return { error: { status: 'error', isFilterEffect: true, similarity: null, backend: backendName, inputTexture: inputId, details: `Failed to read input texture ${inputId} on ${backendName}` } }
           }
           if (!outputFrame) {
-            return { status: 'error', isFilterEffect: true, similarity: null, backend: backendName, details: `Failed to read pixels on ${backendName}` }
+            return { error: { status: 'error', isFilterEffect: true, similarity: null, backend: backendName, details: `Failed to read pixels on ${backendName}` } }
           }
 
           // Mean absolute per-channel difference between output and input,
@@ -217,19 +228,62 @@ export async function testNoPassthrough(
             worst = { meanDiff, changedFraction }
           }
         }
+        return worst!
+      }
+
+      // Many filters are the identity at their defaults by design (a glitch
+      // at zero glitchiness, a mix of zero). A filter is a passthrough only
+      // when it also leaves its input unchanged with its controls moved: each
+      // ungated runtime control at the farther of its 25% and 75% points.
+      const specs = (effect.instance?.globals ?? {}) as Record<string, any>
+      const varied: Record<string, number> = {}
+      // Each control's value as the loaded program set it, restored after.
+      const start: Record<string, unknown> = {}
+      for (const [name, spec] of Object.entries(specs)) {
+        if (!spec.uniform || spec.define !== undefined || spec.ui?.enabledBy !== undefined) continue
+        if (spec.type === 'boolean' || spec.type === 'button') continue
+        if (typeof spec.min !== 'number' || typeof spec.max !== 'number' || spec.min === spec.max) continue
+        const current = pipeline.globalUniforms?.[spec.uniform]
+        start[name] = typeof current === 'number' ? current : (spec.default ?? spec.min)
+        const d = start[name] as number
+        const range = spec.max - spec.min
+        const round = (v: number) => (spec.type === 'int' ? Math.round(v) : v)
+        const quarter = round(spec.min + range * 0.25), threeQuarter = round(spec.min + range * 0.75)
+        varied[name] = Math.abs(threeQuarter - d) > Math.abs(quarter - d) ? threeQuarter : quarter
+      }
+      const setAll = async (values: Record<string, number> | null) => {
+        for (const name of Object.keys(varied)) {
+          pipeline.setUniform?.(specs[name].uniform, values ? values[name] : start[name])
+        }
+        if (typeof pipeline.whenAsyncInitsSettled === 'function') await pipeline.whenAsyncInitsSettled()
+      }
+
+      let atDefaults: Measured
+      let withVaried: Measured | null = null
+      try {
+        const first = await measure()
+        if ('error' in first) return first.error
+        atDefaults = first
+        if (unchanged(atDefaults) && Object.keys(varied).length > 0) {
+          await setAll(varied)
+          try {
+            const second = await measure()
+            if ('error' in second) return second.error
+            withVaried = second
+          } finally {
+            await setAll(null)
+          }
+        }
       } finally {
         if (w[globals.setPausedTime]) w[globals.setPausedTime](0)
         if (w[globals.setPaused]) w[globals.setPaused](false)
       }
 
-      // A passthrough leaves nearly every pixel as it was: the mean
-      // difference stays within the threshold AND at most 1% of the sampled
-      // pixels change. A filter that subtly changes most pixels (a mild
-      // blur) modifies its input even when its mean difference is small.
-      const meanDiff = worst!.meanDiff
-      const changedFraction = worst!.changedFraction
-      const threshold = 0.01
-      const isPassthrough = meanDiff <= threshold && changedFraction <= threshold
+      const identityAtDefaults = unchanged(atDefaults)
+      const reported = withVaried && !unchanged(withVaried) ? withVaried : atDefaults
+      const meanDiff = reported.meanDiff
+      const changedFraction = reported.changedFraction
+      const isPassthrough = unchanged(reported)
 
       return {
         status: isPassthrough ? 'passthrough' : 'ok',
@@ -238,9 +292,10 @@ export async function testNoPassthrough(
         changed_fraction: changedFraction,
         threshold,
         inputTexture: consumedInput.id,
+        ...(identityAtDefaults && !isPassthrough ? { identity_at_defaults: true, varied } : {}),
         details: isPassthrough
-          ? `Output matches input (mean diff ${meanDiff.toFixed(4)}, ${(changedFraction * 100).toFixed(1)}% of pixels changed)`
-          : `Effect modifies input (mean diff ${meanDiff.toFixed(4)}, ${(changedFraction * 100).toFixed(1)}% of pixels changed)`
+          ? `Output matches input (mean diff ${meanDiff.toFixed(4)}, ${(changedFraction * 100).toFixed(1)}% of pixels changed${withVaried ? ', also with its controls moved' : ''})`
+          : `Effect modifies input (mean diff ${meanDiff.toFixed(4)}, ${(changedFraction * 100).toFixed(1)}% of pixels changed${identityAtDefaults ? '; identity at its defaults' : ''})`
       }
     }, session.globals)
 

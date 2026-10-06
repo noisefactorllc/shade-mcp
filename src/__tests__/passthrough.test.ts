@@ -54,6 +54,9 @@ interface FakeViewerOptions {
   frameReadTextures?: [string, string][]
   // WebGPU-shaped backend: no `gl`, async readPixels, a device queue to drain.
   webgpu?: boolean
+  // The effect's parameter specs, and what a setUniform does to the textures.
+  effectGlobals?: Record<string, any>
+  onUniform?: (name: string, value: unknown, textures: Record<string, FakeTex>) => void
 }
 
 function installFakeViewer(globals: ViewerGlobals, options: FakeViewerOptions): any {
@@ -79,13 +82,18 @@ function installFakeViewer(globals: ViewerGlobals, options: FakeViewerOptions): 
   w[globals.renderingPipeline] = {
     backend,
     graph: { passes: options.passes, renderSurface: surface },
+    setUniform: (uniform: string, value: unknown) => {
+      w.__uniforms = w.__uniforms || []
+      w.__uniforms.push([uniform, value])
+      options.onUniform?.(uniform, value, textures)
+    },
     ...(options.frameReadTextures ? { frameReadTextures: new Map(options.frameReadTextures) } : {}),
   }
   // The viewer reports which effect it is showing (issue #34 contract): the
   // namespace/name entry the verb's requested id maps to.
   const requested = options.effectId ?? 'filter/fake'
   const [namespace, name] = [requested.slice(0, requested.indexOf('/')), requested.slice(requested.indexOf('/') + 1)]
-  w[globals.currentEffect] = { namespace, name }
+  w[globals.currentEffect] = { namespace, name, instance: { globals: options.effectGlobals ?? {} } }
   w[globals.pipelineGeneration!] = 0
   w[globals.canvasRenderer] = {
     canvas: { width: W, height: H },
@@ -168,6 +176,40 @@ describe('testNoPassthrough (issue #31)', () => {
     }
     expect(new Set(w.__renderTimes.map((r: any) => r.time))).toEqual(new Set([0, 0.37]))
     expect(w.__paused).toBe(false)
+  })
+
+  it('counts a filter that is the identity at its defaults but changes its input with a control moved', async () => {
+    // Like glitch at zero glitchiness.
+    const input: FakeTex = { width: W, height: H, data: variedBytes() }
+    installFakeViewer(DEFAULT_GLOBALS, {
+      effectId: 'filter/glitchy',
+      passes: [{ inputs: { inputTex: 'inputTex' } }],
+      textures: { inputTex: input, global_frame_read: { width: W, height: H, data: new Uint8Array(input.data) } },
+      effectGlobals: { glitchiness: { uniform: 'u_glitch', type: 'float', min: 0, max: 100, default: 0 } },
+      onUniform: (name, value, textures) => {
+        if (name === 'u_glitch') textures.global_frame_read.data = value ? variedBytes(40) : new Uint8Array(input.data)
+      },
+    })
+    const result: any = await testNoPassthrough(makeSession(), 'filter/glitchy')
+    expect(result.status).toBe('ok')
+    expect(result.identity_at_defaults).toBe(true)
+    expect(result.varied).toEqual({ glitchiness: 75 })
+    // The control is restored to its default afterwards.
+    const w: any = (globalThis as any).window
+    expect(w.__uniforms[w.__uniforms.length - 1]).toEqual(['u_glitch', 0])
+  })
+
+  it('still reports a passthrough when moving its controls changes nothing', async () => {
+    const input: FakeTex = { width: W, height: H, data: variedBytes() }
+    installFakeViewer(DEFAULT_GLOBALS, {
+      effectId: 'filter/inert',
+      passes: [{ inputs: { inputTex: 'inputTex' } }],
+      textures: { inputTex: input, global_frame_read: { width: W, height: H, data: new Uint8Array(input.data) } },
+      effectGlobals: { amount: { uniform: 'u_amount', type: 'float', min: 0, max: 1, default: 0.5 } },
+    })
+    const result: any = await testNoPassthrough(makeSession(), 'filter/inert')
+    expect(result.status).toBe('passthrough')
+    expect(result.details).toContain('also with its controls moved')
   })
 
   it('reads a global surface input through its read half, not the bare global_<name> id', async () => {
