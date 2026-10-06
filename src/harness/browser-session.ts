@@ -199,7 +199,9 @@ function selectAndAwaitEffect({ effectId, globals, timeout }: {
         : ready && (graphChanged || newBuildObserved)
       const idMatches = idNow !== null && idNow === effectId
       const statusChanged = statusText !== before.statusText
-      const failing = /error|failed/.test(statusText.toLowerCase())
+      // Whole words only: a success message naming an effect such as
+      // scanlineError ("compiled scanlineError") is not a failure.
+      const failing = /\b(error|failed)\b/i.test(statusText)
       // Viewers that expose NO rebuild signal at all (no compile generation,
       // no isCompiling flag) cannot prove a rebuild happened; for those, a
       // page-confirmed effect id on a ready graph is the strongest available

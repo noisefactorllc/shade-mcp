@@ -21,6 +21,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `Failed to read input texture global_o0`, because the backend stores the
   pair as `global_o0_read`/`_write`. The input is now read from the half the
   frame presented (`frameReadTextures`), then `global_<name>_read`.
+- **An effect whose name contains "error" is no longer a compile failure.**
+  Selection treated any viewer status text matching `error` or `failed` as a
+  failure, so noisemaker's `filter/scanlineError` ("compiled scanlineError")
+  failed every verb. Only the whole words count now.
 
 ### Added
 

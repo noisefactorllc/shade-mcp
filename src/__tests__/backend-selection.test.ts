@@ -229,6 +229,14 @@ describe('browser verbs bind results to the requested effect (issue #34)', () =>
       }
     })
 
+    it(`${name} accepts an effect whose name contains "error" ("compiled scanlineError" is a success)`, async () => {
+      installFakeViewer(DEFAULT_GLOBALS, { requested: 'filter/scanlineError', loadDelayMs: 20 })
+      const result = await run(makeSession('webgl2'), 'filter/scanlineError')
+
+      expect(result.status).not.toBe('error')
+      expect(result.effect_id).toBe('filter/scanlineError')
+    })
+
     it(`${name} returns status error when the viewer ends up showing a different effect`, async () => {
       installFakeViewer(DEFAULT_GLOBALS, { requested: 'synth/requested', loadDelayMs: 20, showsEffect: 'synth/other' })
       const session = makeSession('webgl2')
