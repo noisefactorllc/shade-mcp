@@ -306,6 +306,22 @@ describe('backend-neutral frame readback (issue #28)', () => {
     })
   })
 
+  // Async CPU effects draw an overlay over several frames; the pipeline's
+  // whenAsyncInitsSettled() tells a capture when it is done.
+  it('renderEffectFrame waits for whenAsyncInitsSettled before capturing', async () => {
+    const w = installWebGpuFakeViewer(DEFAULT_GLOBALS)
+    const pipeline = w[DEFAULT_GLOBALS.renderingPipeline]
+    const read = pipeline.backend.readPixels
+    let overlayDone = false
+    pipeline.whenAsyncInitsSettled = () => new Promise<void>((resolve) => setTimeout(() => { overlayDone = true; resolve() }, 30))
+    pipeline.backend.readPixels = async (id: string) => overlayDone
+      ? read(id)
+      : { data: new Uint8Array(WIDTH * HEIGHT * 4), width: WIDTH, height: HEIGHT }
+    const result = await renderEffectFrame(makeSession('webgpu'), 'synth/noise', { warmupFrames: 1 })
+    expect(result.status).toBe('ok')
+    expect((result.metrics as any).is_all_zero).toBe(false)
+  })
+
   describe('testNoPassthrough on a WebGPU backend', () => {
     it('measures the output-to-input difference through the backend readback', async () => {
       installWebGpuFakeViewer(DEFAULT_GLOBALS, { filterEffect: true })

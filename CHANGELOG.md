@@ -22,6 +22,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   pair as `global_o0_read`/`_write`. The input is now read from the half the
   frame presented (`frameReadTextures`), then `global_<name>_read`.
 
+### Added
+
+- **Captures wait for async effects.** After a confirmed selection,
+  `BrowserSession.selectEffect()` awaits the viewer pipeline's
+  `whenAsyncInitsSettled()` when it exists (noisemaker 1.x provides it),
+  bounded by the session timeout. Async CPU effects such as noisemaker's
+  `filter/fibers` draw their overlay over several frames, so every capture
+  verb measured an unfinished, often blank, frame. Viewers without the method
+  are unaffected.
+
 ## [0.4.2] — 2026-10-06
 
 ### Fixed

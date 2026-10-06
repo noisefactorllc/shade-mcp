@@ -606,6 +606,20 @@ export class BrowserSession {
         message: `The viewer does not report which effect it is showing; cannot confirm ${effectId}`,
       }
     }
+    if (outcome.status === 'ok') {
+      // Async CPU effects (noisemaker's fibers, scratches, ...) draw an
+      // overlay over several frames after the graph is built. When the
+      // pipeline exposes whenAsyncInitsSettled(), wait for it, bounded by the
+      // session timeout, so a capture never measures the unfinished overlay.
+      await page.evaluate(({ globals, timeout }) => {
+        const pipeline = (window as any)[globals.renderingPipeline]
+        if (typeof pipeline?.whenAsyncInitsSettled !== 'function') return
+        return Promise.race([
+          pipeline.whenAsyncInitsSettled(),
+          new Promise((resolve) => setTimeout(resolve, timeout)),
+        ])
+      }, { globals: this.globals, timeout: this.timeoutMs })
+    }
     return outcome
   }
 
