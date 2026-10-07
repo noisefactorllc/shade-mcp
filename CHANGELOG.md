@@ -3,6 +3,47 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.10] — 2026-10-07
+
+### Changed
+
+- **`testUniformResponsiveness` judges each control against a fresh
+  reference captured twice.** The second capture against the first is the
+  output's own change between renders; on an output that changes by itself
+  (a simulation stepping on every render) a control responds only well beyond
+  that change and otherwise gets no verdict (`unstable`).
+- **Every control type is tested**: booleans (opposite value), dropdowns
+  (other choices) and vector controls (moved a quarter of their range) as well
+  as ranges, and member enums switch to other members from the renderer's enum
+  registry; a control that cannot be moved at run time is listed as
+  `untested` with a reason instead of being left out.
+- **Context retries are bounded and ordered**: at most 24 per control, trying
+  controls in the same UI category, then those sharing a name prefix, then
+  toggles and dropdowns; a range control is also tried at its extremes. When
+  every context that could show a control makes the output change on its own,
+  the control gets no verdict instead of a fail.
+- **Square renders are measured at a non-square size** (restored afterwards,
+  reported as `measured_size`), so aspect-ratio controls can respond.
+- **Params the UI does not show** (`ui.hidden` as well as `ui.control: false`)
+  are not measured or used as context.
+
+### Fixed
+
+- **Start values come from the effect's pass uniforms.** 0.4.8 read
+  `pipeline.globalUniforms`, which the noisemaker viewer does not fill, so its
+  restore to the loaded program's values did not work there.
+- A control that responded only on its second test value was reported as
+  failing.
+- Waits for async overlays are bounded by the session timeout
+  (`settle_timed_out`), in both checks.
+- The uniform check reads the render surface on WebGL2 too, not the possibly
+  smaller presented canvas.
+- `testNoPassthrough` takes each measure's maximum over both compare times
+  and reports an error for frames of different sizes; a volume filter
+  (`inputTex3d`) is compared with the volume its node writes, not with the 2D
+  render surface.
+- Tool descriptions and the README describe both checks as they work.
+
 ## [0.4.9] — 2026-10-06
 
 ### Changed
