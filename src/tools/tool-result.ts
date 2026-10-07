@@ -52,8 +52,9 @@ function withOutcome(entry: unknown): unknown {
  * Every text payload is JSON. A single result gains a top-level `outcome`.
  * A batch (an array payload) becomes `{ outcome, summary, results }`: each
  * entry gains its own `outcome`, `summary` counts the entries per outcome, and
- * the batch outcome is `error` when no entry produced a verdict, otherwise
- * the worst entry outcome.
+ * the batch outcome is `error` when every entry is an `error`, `fail` when any
+ * entry is a `fail` or an `error`, `warning` when any is a `warning`,
+ * `skipped` when every entry is `skipped`, and `ok` otherwise.
  *
  * `isError` marks a call that failed as a whole: a single `error` result, or
  * a batch in which every entry is an `error`. A negative verdict (`fail`) is

@@ -329,6 +329,87 @@ describe('testUniformResponsiveness: controls inert at defaults', () => {
     expect(result.uniforms.find((u: any) => u.name === 'inert').responds).toBe(false)
   })
 
+  it('gives no verdict on a dead control when the output changes on every render', async () => {
+    // A simulation steps on every render: comparing against a stale baseline
+    // would make every control look responsive.
+    let frame = 0
+    const specs = { dead: { uniform: 'u_dead', type: 'float', min: 0, max: 1, default: 0.5 } }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (_v, _t, px) => ((px + frame) % 7) / 7)
+    const renderer = (globalThis as any).window[DEFAULT_GLOBALS.canvasRenderer]
+    const render = renderer.render
+    renderer.render = (t: number) => { frame++; render(t) }
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    const dead = result.uniforms.find((u: any) => u.name === 'dead')
+    expect(dead.responds).toBe(null)
+    expect(dead.unstable).toBe(true)
+    expect(result.tested_uniforms).toEqual(['dead:unstable'])
+    expect(result.status).toBe('skipped')
+  })
+
+  it('reads start values from the effect passes, where the viewer writes program values', async () => {
+    const specs = {
+      amount: { uniform: 'u_amount', type: 'float', min: 0, max: 1, default: 0.5 },
+      inert: { uniform: 'u_inert', type: 'float', min: 0, max: 1, default: 0.5 },
+    }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v) => v.u_amount)
+    const pipeline = (globalThis as any).window[DEFAULT_GLOBALS.renderingPipeline]
+    pipeline.setUniform('u_amount', 0.9)
+    pipeline.graph = { ...pipeline.graph, passes: [{ name: 'main', uniforms: { u_amount: 0.9, u_inert: 0.5 } }] }
+    delete pipeline.globalUniforms
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    expect(result.uniforms.find((u: any) => u.name === 'amount')).toMatchObject({ default_value: 0.9, responds: true })
+    expect(result.uniforms.find((u: any) => u.name === 'inert').responds).toBe(false)
+  })
+
+  it('keeps a response that only the second test value produces', async () => {
+    // Only the 38.2% value draws one strongly changed pixel; the first test
+    // value moves a tenth of the pixels by 2/255, which ranks higher by mean
+    // deltas but stays under every threshold.
+    const specs = { amount: { uniform: 'u_amount', type: 'float', min: 0, max: 1, default: 0.5 } }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v, _t, px) => {
+      if (px === 3 && Math.abs(v.u_amount - 0.381966) < 1e-6) return 1
+      return v.u_amount === 0.25 && px % 10 === 0 ? (77 + 2) / 255 : 77 / 255
+    })
+    ;(globalThis as any).window[DEFAULT_GLOBALS.canvasRenderer].canvas = { width: 40, height: 40 }
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    expect(result.status).toBe('ok')
+    expect(result.uniforms[0].test_value).toBeCloseTo(0.381966, 6)
+  })
+
+  it('tests booleans by toggling them and dropdowns by switching choices', async () => {
+    const specs = {
+      ridges: { uniform: 'u_ridges', type: 'boolean', default: false },
+      mode: { uniform: 'u_mode', type: 'int', default: 0, choices: { none: 0, 'Group:': null, soft: 1, hard: 2 } },
+      deadMode: { uniform: 'u_dead', type: 'int', default: 0, choices: { a: 0, b: 1 } },
+    }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v) => 0.2 + (v.u_ridges ? 0.3 : 0) + 0.1 * v.u_mode)
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    expect(result.tested_uniforms).toEqual(['ridges:pass', 'mode:pass', 'deadMode:fail'])
+    expect(result.uniforms.find((u: any) => u.name === 'mode').test_value).toBe(1)
+    expect(result.status).toBe('fail')
+  })
+
+  it('lists a control it cannot move as untested instead of leaving it out', async () => {
+    const specs = {
+      amount: { uniform: 'u_amount', type: 'float', min: 0, max: 1, default: 0.5 },
+      oscType: { uniform: 'u_osc', type: 'member', enum: 'oscType', default: 'oscType.sine' },
+    }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v) => v.u_amount)
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    expect(result.status).toBe('ok')
+    expect(result.uniforms.find((u: any) => u.name === 'oscType')).toMatchObject({ responds: null, untested: expect.any(String) })
+    expect(result.details).toContain('untested: oscType')
+  })
+
+  it('does not wait forever for an async overlay that never settles', async () => {
+    const specs = { amount: { uniform: 'u_amount', type: 'float', min: 0, max: 1, default: 0.5 } }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v) => v.u_amount)
+    ;(globalThis as any).window[DEFAULT_GLOBALS.renderingPipeline].whenAsyncInitsSettled = () => new Promise(() => {})
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    expect(result.status).toBe('ok')
+    expect(result.settle_timed_out).toBe(true)
+  }, 20000)
+
   it('still fails a control that is ungated and never moves the output', async () => {
     const specs = {
       amount: { uniform: 'u_amount', type: 'float', min: 0, max: 1, default: 0.5 },

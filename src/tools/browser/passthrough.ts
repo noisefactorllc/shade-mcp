@@ -56,7 +56,7 @@ export async function testNoPassthrough(
     }
 
     // Check if filter effect and test passthrough
-    const result = await page.evaluate(async (globals) => {
+    const result = await page.evaluate(async ({ globals, settleMs }) => {
       const w = window as any
       const pipeline = w[globals.renderingPipeline]
       const effect = w[globals.currentEffect]
@@ -228,13 +228,21 @@ export async function testNoPassthrough(
             return { error: { status: 'error', isFilterEffect: true, similarity: null, backend: backendName, details: `Failed to read pixels on ${backendName}` } }
           }
 
+          // The comparison is per pixel position: frames of different sizes
+          // cannot be compared index by index.
+          if (inputFrame.width !== outputFrame.width || inputFrame.height !== outputFrame.height) {
+            return { error: { status: 'error', isFilterEffect: true, similarity: null, backend: backendName,
+              inputTexture: inputId,
+              details: `Input ${inputFrame.width}x${inputFrame.height} and output ${outputFrame.width}x${outputFrame.height} differ in size on ${backendName}` } }
+          }
+
           // Mean absolute per-channel difference between output and input,
           // normalized to 0..1, and the fraction of sampled pixels that
           // changed by more than 2/255 in any channel. Only RGB counts: alpha
           // is a present detail, not effect output.
-          const count = Math.min(inputFrame.width * inputFrame.height, outputFrame.width * outputFrame.height)
+          const count = inputFrame.width * inputFrame.height
           let diffSum = 0, changed = 0, samples = 0
-          for (const i of sampleGrid(Math.min(inputFrame.width, outputFrame.width), Math.min(inputFrame.height, outputFrame.height))) {
+          for (const i of sampleGrid(inputFrame.width, inputFrame.height)) {
             const idx = i * 4
             const dr = Math.abs(outputFrame.pixels[idx] - inputFrame.pixels[idx])
             const dg = Math.abs(outputFrame.pixels[idx + 1] - inputFrame.pixels[idx + 1])
@@ -256,13 +264,11 @@ export async function testNoPassthrough(
           const meanDiff = diffSum / (samples * 3 * 255)
           const changedFraction = changed / samples
           const strongFraction = strong / count
-          const strongest = Math.max(strongFraction, worst ? worst.strongFraction : 0)
-          if (!worst || changedFraction > worst.changedFraction ||
-              (changedFraction === worst.changedFraction && meanDiff > worst.meanDiff)) {
-            worst = { meanDiff, changedFraction, strongFraction: strongest }
-          } else {
-            worst.strongFraction = strongest
-          }
+          // Each measure is the larger over the compare times.
+          worst = worst
+            ? { meanDiff: Math.max(worst.meanDiff, meanDiff), changedFraction: Math.max(worst.changedFraction, changedFraction),
+                strongFraction: Math.max(worst.strongFraction, strongFraction) }
+            : { meanDiff, changedFraction, strongFraction }
         }
         return worst!
       }
@@ -272,6 +278,18 @@ export async function testNoPassthrough(
       // when it also leaves its input unchanged with its controls moved: each
       // ungated runtime control at the farther of its 25% and 75% points.
       const specs = (effect.instance?.globals ?? {}) as Record<string, any>
+      const effectFunc = effect.instance?.func ?? effect.name
+      const ownPasses = passes.filter((pass) =>
+        pass.effectFunc === effectFunc && (pass.effectNamespace == null || pass.effectNamespace === effect.namespace))
+      // The viewer writes program values into the passes' uniforms, not the
+      // pipeline's global uniforms: read the effect's own passes first.
+      const programValue = (uniform: string): unknown => {
+        for (const pass of [...ownPasses, ...passes]) {
+          const v = pass.uniforms?.[uniform]
+          if (typeof v === 'number') return v
+        }
+        return pipeline.globalUniforms?.[uniform]
+      }
       const varied: Record<string, number> = {}
       // Each control's value as the loaded program set it, restored after.
       const start: Record<string, unknown> = {}
@@ -279,7 +297,7 @@ export async function testNoPassthrough(
         if (!spec.uniform || spec.define !== undefined || spec.ui?.enabledBy !== undefined) continue
         if (spec.type === 'boolean' || spec.type === 'button') continue
         if (typeof spec.min !== 'number' || typeof spec.max !== 'number' || spec.min === spec.max) continue
-        const current = pipeline.globalUniforms?.[spec.uniform]
+        const current = programValue(spec.uniform)
         start[name] = typeof current === 'number' ? current : (spec.default ?? spec.min)
         const d = start[name] as number
         const range = spec.max - spec.min
@@ -291,7 +309,16 @@ export async function testNoPassthrough(
         for (const name of Object.keys(varied)) {
           pipeline.setUniform?.(specs[name].uniform, values ? values[name] : start[name])
         }
-        if (typeof pipeline.whenAsyncInitsSettled === 'function') await pipeline.whenAsyncInitsSettled()
+        // Wait for async CPU overlays to redraw, but never longer than the
+        // session timeout.
+        if (typeof pipeline.whenAsyncInitsSettled === 'function') {
+          let timer: any
+          await Promise.race([
+            pipeline.whenAsyncInitsSettled(),
+            new Promise((resolve) => { timer = setTimeout(resolve, settleMs) }),
+          ])
+          clearTimeout(timer)
+        }
       }
 
       let atDefaults: Measured
@@ -334,7 +361,7 @@ export async function testNoPassthrough(
           ? `Output matches input (mean diff ${meanDiff.toFixed(4)}, ${(changedFraction * 100).toFixed(1)}% of pixels changed${withVaried ? ', also with its controls moved' : ''})`
           : `Effect modifies input (mean diff ${meanDiff.toFixed(4)}, ${(changedFraction * 100).toFixed(1)}% of pixels changed${identityAtDefaults ? '; identity at its defaults' : ''})`
       }
-    }, session.globals)
+    }, { globals: session.globals, settleMs: session.timeoutMs })
 
     // Report the page-confirmed identity (issue #34): the backend the page
     // actually rendered on, and the effect id the page confirms.
@@ -349,7 +376,7 @@ export async function testNoPassthrough(
 export function registerTestNoPassthrough(server: McpServer): void {
   server.tool(
     'testNoPassthrough',
-    'Check that a filter effect modifies the input it consumes: compares the rendered output with the bound input texture at one fixed paused time (>1% mean pixel difference means the effect modifies its input).',
+    "Check that a filter effect modifies the input it consumes. Compares the rendered output with the bound input texture (skipping a feedback read of the effect's own output) at paused t=0 and t=0.37: similarity (mean RGB difference on a 64x64 grid), changed_fraction (grid pixels changed by more than 2/255) and strong_fraction (all pixels changed by more than 16/255). Output is unchanged when similarity and changed_fraction are at most 0.01 and strong_fraction at most 0.0005 at both times. A filter unchanged at its defaults is measured again with its ungated controls moved (identity_at_defaults, varied); only a filter unchanged both ways is a passthrough.",
     testNoPassthroughSchema,
     async (args: any) => {
       const config = getConfig()

@@ -179,16 +179,16 @@ describe('testUniformResponsiveness result contract', () => {
     expect(result.details).toContain('boom')
   })
 
-  it('reports skipped when nothing is testable', async () => {
+  it('reports skipped, and lists the controls, when nothing is testable', async () => {
     installFakeViewer(DEFAULT_GLOBALS, {
-      flag: { uniform: 'u_flag', type: 'boolean', default: true },
       fixed: { uniform: 'u_fixed', type: 'float', min: 1, max: 1, default: 1 },
+      kind: { uniform: 'u_kind', type: 'member', enum: 'kind', default: 'kind.a' },
     })
     const session = makeSession()
     const result = await testUniformResponsiveness(session, 'synth/noise')
 
     expect(result.status).toBe('skipped')
-    expect(result.details).toBe('No testable uniforms')
-    expect(result.uniforms).toEqual([])
+    expect(result.details).toBe('No uniform could be measured; untested: fixed, kind')
+    expect(result.tested_uniforms).toEqual(['fixed:untested', 'kind:untested'])
   })
 })
