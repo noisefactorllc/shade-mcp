@@ -89,6 +89,7 @@ export async function testNoPassthrough(
         for (const id of Object.values(pass.outputs || {})) if (!writtenAt.has(String(id))) writtenAt.set(String(id), index)
       })
       let consumedInput: { key: string; id: string } | null = null
+      let consumingPass: any = null
       for (const [index, pass] of passes.entries()) {
         const inputs = pass.inputs || {}
         for (const key of Object.keys(inputs)) {
@@ -96,10 +97,22 @@ export async function testNoPassthrough(
           if ((writtenAt.get(id) ?? -1) >= index) continue
           if (isPipelineInput(key) || isPipelineInput(id)) {
             consumedInput = { key, id }
+            consumingPass = pass
             break
           }
         }
         if (consumedInput) break
+      }
+      // A volume filter (filter3d) consumes a volume atlas and writes one; the
+      // render surface is a 2D rendering of a later effect. Compare the input
+      // volume with the last texture the filter's own node writes.
+      let volumeOutput: string | null = null
+      if (consumedInput?.key === 'inputTex3d' && consumingPass?.nodeId != null) {
+        for (const pass of passes) {
+          if (pass.nodeId !== consumingPass.nodeId) continue
+          const written = Object.values(pass.outputs || {}).map(String)
+          if (written.length > 0) volumeOutput = written[written.length - 1]
+        }
       }
 
       if (!consumedInput) return { status: 'skipped', isFilterEffect: false, similarity: null, details: 'Not a filter effect' }
@@ -149,6 +162,7 @@ export async function testNoPassthrough(
       // stale half after the swap), then the conventional
       // global_<surface>_read name, then the last node output.
       async function readOutput(): Promise<{ pixels: Uint8Array; width: number; height: number } | null> {
+        if (volumeOutput) return readTexture(volumeOutput)
         const surf = pipeline.graph?.renderSurface
         const candidates: string[] = []
         const frameRead = surf != null ? pipeline.frameReadTextures?.get?.(surf) : null
@@ -295,6 +309,7 @@ export async function testNoPassthrough(
       const start: Record<string, unknown> = {}
       for (const [name, spec] of Object.entries(specs)) {
         if (!spec.uniform || spec.define !== undefined || spec.ui?.enabledBy !== undefined) continue
+        if (spec.ui?.control === false || spec.ui?.hidden === true) continue
         if (spec.type === 'boolean' || spec.type === 'button') continue
         if (typeof spec.min !== 'number' || typeof spec.max !== 'number' || spec.min === spec.max) continue
         const current = programValue(spec.uniform)

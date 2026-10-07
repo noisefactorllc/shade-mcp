@@ -287,10 +287,11 @@ describe('testUniformResponsiveness: controls inert at defaults', () => {
     expect(result.uniforms[0].strong_fraction).toBeCloseTo(1 / 1600, 6)
   })
 
-  it('skips params the UI hides (ui.control: false)', async () => {
+  it('skips params the UI does not show (ui.control: false, ui.hidden)', async () => {
     const specs = {
       amount: { uniform: 'u_amount', type: 'float', min: 0, max: 1, default: 0.5 },
       hidden: { uniform: 'u_hidden', type: 'float', min: 0, max: 1, default: 0.5, ui: { control: false } },
+      vertex: { uniform: 'u_vertex', type: 'vec4', default: [0, 0, 0, 0], ui: { hidden: true } },
     }
     installFakeViewer(DEFAULT_GLOBALS, specs, (v) => v.u_amount)
     const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
@@ -409,6 +410,75 @@ describe('testUniformResponsiveness: controls inert at defaults', () => {
     expect(result.status).toBe('ok')
     expect(result.settle_timed_out).toBe(true)
   }, 20000)
+
+  it('measures an aspect-ratio control on a non-square render size and restores the size', async () => {
+    const specs = { aspectLens: { uniform: 'u_aspect', type: 'boolean', default: true } }
+    const canvas = { width: 40, height: 40 }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v) => (v.u_aspect && canvas.width !== canvas.height ? 0.8 : 0.3))
+    const w = (globalThis as any).window
+    const pipeline = w[DEFAULT_GLOBALS.renderingPipeline]
+    pipeline.width = 40; pipeline.height = 40
+    const renderer = w[DEFAULT_GLOBALS.canvasRenderer]
+    renderer.canvas = canvas
+    renderer.resize = (width: number, height: number) => {
+      canvas.width = width; canvas.height = height; pipeline.width = width; pipeline.height = height
+    }
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    expect(result.status).toBe('ok')
+    expect(result.measured_size).toEqual([40, 25])
+    expect([canvas.width, canvas.height]).toEqual([40, 40])
+  })
+
+  it('tries a range control at its extremes for the context', async () => {
+    // Like remap's zone vertices: vertex 24 is drawn only when the count
+    // exceeds 24, which the count's test values (9, 24) never reach.
+    const specs = {
+      count: { uniform: 'u_count', type: 'int', min: 1, max: 32, default: 4 },
+      v24: { uniform: 'u_v24', type: 'float', min: 0, max: 1, default: 0.5 },
+    }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v) => 0.3 + 0.01 * v.u_count + (v.u_count > 24 ? 0.4 * v.u_v24 : 0))
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    const vertex = result.uniforms.find((u: any) => u.name === 'v24')
+    expect(vertex.responds).toBe(true)
+    expect(vertex.context).toEqual({ count: 32 })
+  })
+
+  it('gives no verdict when the only contexts that could show the control make the output change on its own', async () => {
+    // Like feedback's refract direction: it shows only with the feedback mixed
+    // in, and a mixed-in feedback changes on every render.
+    let frame = 0
+    const specs = {
+      mix: { uniform: 'u_mix', type: 'float', min: 0, max: 100, default: 0 },
+      dir: { uniform: 'u_dir', type: 'float', min: -180, max: 180, default: 0 },
+    }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v, _t, px) =>
+      v.u_mix > 0 ? ((px + frame) % 5) / 5 : 0.2 + 0.3 * (v.u_mix / 100))
+    const renderer = (globalThis as any).window[DEFAULT_GLOBALS.canvasRenderer]
+    const render = renderer.render
+    renderer.render = (t: number) => { frame++; render(t) }
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    const dir = result.uniforms.find((u: any) => u.name === 'dir')
+    expect(dir.responds).toBe(null)
+    expect(dir.unstable).toBe(true)
+  })
+
+  it('bounds the retries for an effect with many controls', async () => {
+    const specs: Record<string, any> = { dead: { uniform: 'u_dead', type: 'float', min: 0, max: 1, default: 0.5 } }
+    for (let i = 0; i < 60; i++) specs[`other${i}`] = { uniform: `u_other${i}`, type: 'float', min: 0, max: 1, default: 0.5 }
+    installFakeViewer(DEFAULT_GLOBALS, specs, () => 0.3)
+    const pipeline = (globalThis as any).window[DEFAULT_GLOBALS.renderingPipeline]
+    const set = pipeline.setUniform
+    // The dead control's second test value (the 38.2% point) is set only when
+    // the dead control itself is measured: once, plus once per retry.
+    let deadMeasures = 0
+    pipeline.setUniform = (name: string, value: any) => {
+      if (name === 'u_dead' && Math.abs(value - 0.381966) < 1e-6) deadMeasures++
+      set(name, value)
+    }
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    expect(result.uniforms.find((u: any) => u.name === 'dead').responds).toBe(false)
+    expect(deadMeasures).toBe(1 + 24)
+  }, 60000)
 
   it('still fails a control that is ungated and never moves the output', async () => {
     const specs = {

@@ -253,6 +253,26 @@ describe('testNoPassthrough (issue #31)', () => {
     expect(result.similarity).toBeGreaterThan(0)
   })
 
+  it('compares a volume filter\'s input volume with the volume it writes, not the 2D render surface', async () => {
+    // Like filter3d/palette3d: a 16x256 volume atlas in and out; the render
+    // surface is a 2D rendering of a later effect, a different size.
+    const volumeIn: FakeTex = { width: 16, height: 256, data: new Uint8Array(16 * 256 * 4).fill(90) }
+    const volumeOut: FakeTex = { width: 16, height: 256, data: new Uint8Array(16 * 256 * 4).fill(160) }
+    installFakeViewer(DEFAULT_GLOBALS, {
+      effectId: 'filter3d/recolor',
+      passes: [
+        { nodeId: 'node_0', inputs: {}, outputs: { fragColor: 'node_0_volume' } },
+        { nodeId: 'node_1', inputs: { inputTex3d: 'node_0_volume' }, outputs: { fragColor: 'node_1_volumeCache' } },
+        { nodeId: 'node_2', inputs: { inputTex3d: 'node_1_volumeCache' }, outputs: { fragColor: 'global_frame' } },
+      ],
+      textures: { node_0_volume: volumeIn, node_1_volumeCache: volumeOut, global_frame_read: { width: W, height: H, data: variedBytes() } },
+    })
+    const result: any = await testNoPassthrough(makeSession(), 'filter3d/recolor')
+    expect(result.inputTexture).toBe('node_0_volume')
+    expect(result.status).toBe('ok')
+    expect(result.similarity).toBeCloseTo(70 / 255, 3)
+  })
+
   it('still reports a passthrough when moving its controls changes nothing', async () => {
     const input: FakeTex = { width: W, height: H, data: variedBytes() }
     installFakeViewer(DEFAULT_GLOBALS, {

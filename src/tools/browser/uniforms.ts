@@ -292,6 +292,7 @@ export async function testUniformResponsiveness(
         if (timedOut) settleTimedOut = true
       }
 
+      const visible = (spec: any) => spec.ui?.control !== false && spec.ui?.hidden !== true
       const round = (spec: any, v: number) => (spec.type === 'int' ? Math.round(v) : v)
       // Up to two values that differ from the control's start value, or null
       // when it cannot be moved at run time:
@@ -335,12 +336,39 @@ export async function testUniformResponsiveness(
         }
         return null
       }
-      // Another control's value for a context: its first test value, or
-      // undefined when it cannot be moved at run time.
-      const contextValueOf = (param: string, spec: any): unknown => {
-        if (!spec.uniform || spec.define !== undefined || spec.type === 'button' || spec.ui?.control === false) return undefined
-        return testValuesOf(param, spec)?.[0]
+      // Another control's values for a context: its first test value, then a
+      // range's extremes (a count at its maximum uses every vertex; a fractal
+      // power at its minimum changes the shape). Empty when it cannot be
+      // moved at run time.
+      const contextValuesOf = (param: string, spec: any): unknown[] => {
+        if (!spec.uniform || spec.define !== undefined || spec.type === 'button' || !visible(spec)) return []
+        const first = testValuesOf(param, spec)?.[0]
+        if (first === undefined) return []
+        const values: unknown[] = [first]
+        const isRange = !spec.choices && spec.type !== 'boolean' && !Array.isArray(startOf(param)) &&
+          typeof spec.min === 'number' && typeof spec.max === 'number'
+        if (isRange) {
+          for (const extreme of [spec.max, spec.min]) {
+            if (!same(extreme, startOf(param)) && !values.some((v) => same(v, extreme))) values.push(extreme)
+          }
+        }
+        return values
       }
+      // Retry order: controls in the same UI category, then controls whose
+      // names share a prefix (zone1_count for zone1_v24, hslEnable for
+      // hslHueCenter), then toggles and dropdowns, then the rest in definition
+      // order. At most 24 retries per control keep an effect with hundreds of
+      // controls (remap's zone vertices) bounded.
+      const prefixOf = (param: string) => (param.includes('_') ? param.split('_')[0] : (param.match(/^[a-z]+/)?.[0] ?? param))
+      const retryRank = (param: string, spec: any, other: string, otherSpec: any) => {
+        const category = spec.ui?.category
+        if (category !== undefined && otherSpec.ui?.category === category) return 0
+        const prefix = prefixOf(param)
+        if (prefix.length >= 3 && prefixOf(other) === prefix) return 1
+        if (otherSpec.type === 'boolean' || otherSpec.choices) return 2
+        return 3
+      }
+      const MAX_CONTEXT_RETRIES = 24
 
       type Delta = { luma: number; channel: number; pixel: number; strong: number }
       type Capture = Array<{ mean: number[]; samples: number[]; pixels: Uint8Array }>
@@ -410,6 +438,16 @@ export async function testUniformResponsiveness(
         await settle()
       }
 
+      // An aspect-ratio control (a lens's 1:1 aspect) does nothing on a square
+      // frame: measure on a non-square render size, restored afterwards.
+      const sizeBefore = { width: pipeline.width, height: pipeline.height }
+      const reshape = typeof renderer?.resize === 'function' && sizeBefore.width > 0 && sizeBefore.width === sizeBefore.height
+      if (reshape) {
+        renderer.resize(sizeBefore.width, Math.max(1, Math.round(sizeBefore.height * 0.625)))
+        await settle()
+      }
+      try {
+
       // A frame that cannot be read leaves every control unmeasurable: say so
       // once, naming the backend, instead of erroring control by control.
       if (!(await captureAll())) {
@@ -426,8 +464,10 @@ export async function testUniformResponsiveness(
 
       for (const [name, spec] of Object.entries(effectGlobals) as any[]) {
         if (!spec.uniform) continue
-        // A param the UI hides (ui.control: false) is not a user control.
-        if (spec.ui?.control === false) continue
+        // A param the UI does not show (ui.control: false, ui.hidden) is not
+        // a user control: remap's per-zone vertices, a palette's internal
+        // offsets. It is neither measured nor used as a context.
+        if (!visible(spec)) continue
         const defaultVal = startOf(name)
 
         // A compile-time define changes only on recompile, never through
@@ -478,26 +518,39 @@ export async function testUniformResponsiveness(
           // can push the content off-screen (pan and scale at their 25%
           // points), and then nothing is tested.
           if (measured && !measured.responds && !measured.unstable) {
-            for (const [other, otherSpec] of Object.entries(effectGlobals) as any[]) {
-              if (other === name || other in assign) continue
-              const value = contextValueOf(other, otherSpec)
-              if (value === undefined) continue
-              const varied: Record<string, unknown> = {}
-              if (otherSpec.ui?.enabledBy !== undefined && !satisfy(otherSpec.ui.enabledBy, varied)) continue
-              // When the other is gated by this control (an adjustment behind
-              // an enable toggle), the toggle stays where it started in the
-              // reference and its test value opens the gate.
-              delete varied[name]
-              varied[other] = value
-              Object.assign(varied, assign)
-              let retry: Awaited<ReturnType<typeof measure>> = null
-              try {
-                retry = await measure(spec, varied, testValues)
-              } finally {
-                await restore([name, ...Object.keys(varied)])
+            const others = (Object.entries(effectGlobals) as any[])
+              .map(([other, otherSpec], index) => ({ other, otherSpec, index, rank: retryRank(name, spec, other, otherSpec) }))
+              .filter(({ other }) => other !== name && !(other in assign))
+              .sort((a, b) => a.rank - b.rank || a.index - b.index)
+            let retries = 0
+            let unstableRetry: Awaited<ReturnType<typeof measure>> = null
+            retrying: for (const { other, otherSpec } of others) {
+              for (const value of contextValuesOf(other, otherSpec)) {
+                if (retries >= MAX_CONTEXT_RETRIES) break retrying
+                const varied: Record<string, unknown> = {}
+                if (otherSpec.ui?.enabledBy !== undefined && !satisfy(otherSpec.ui.enabledBy, varied)) continue retrying
+                // When the other is gated by this control (an adjustment behind
+                // an enable toggle), the toggle stays where it started in the
+                // reference and its test value opens the gate.
+                delete varied[name]
+                varied[other] = value
+                Object.assign(varied, assign)
+                retries++
+                let retry: Awaited<ReturnType<typeof measure>> = null
+                try {
+                  retry = await measure(spec, varied, testValues)
+                } finally {
+                  await restore([name, ...Object.keys(varied)])
+                }
+                if (retry?.responds) { measured = retry; context = varied; break retrying }
+                if (retry?.unstable && !unstableRetry) unstableRetry = retry
               }
-              if (retry?.responds) { measured = retry; context = varied; break }
             }
+            // A context that sets the output changing between renders (a
+            // feedback mixed in) cannot show a response either way: when no
+            // context made the control respond and one was unstable, the
+            // control gets no verdict rather than a fail.
+            if (!measured.responds && unstableRetry) measured = { ...measured, unstable: true, noise: unstableRetry.noise }
           }
         } catch (err) {
           measureError = err instanceof Error ? err.message : String(err)
@@ -584,6 +637,13 @@ export async function testUniformResponsiveness(
         strong_threshold: 0.0005,
         details,
         ...(settleTimedOut ? { settle_timed_out: true } : {}),
+        ...(reshape ? { measured_size: [sizeBefore.width, Math.max(1, Math.round(sizeBefore.height * 0.625))] } : {}),
+      }
+      } finally {
+        if (reshape) {
+          renderer.resize(sizeBefore.width, sizeBefore.height)
+          await settle()
+        }
       }
     }, { globals: session.globals, settleMs: session.timeoutMs })
 
