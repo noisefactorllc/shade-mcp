@@ -3,6 +3,26 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.9] — 2026-10-06
+
+### Changed
+
+- **`testUniformResponsiveness` retries a control with one other control at
+  a time** instead of all at once, which could push the content off-screen.
+  An enable toggle is measured against the adjustment it gates, and vector
+  controls (tints, color wheels) can be the context. Params the UI hides
+  (`ui.control: false`) are skipped.
+
+### Fixed
+
+- **Sparse changes count.** Both checks report `strong_fraction`, the share
+  of all pixels that changed by more than 16/255; a sparse overlay changes
+  its input and a control that adds a few strongly changed pixels responds.
+- **Grid sampling.** Per-pixel samples come from a 64x64 grid at cell centers
+  instead of a flat stride that read only four columns of a 1024x1024 frame.
+- **`testNoPassthrough` ignores feedback reads**: a pass input the same or a
+  later pass writes is the effect's own previous output, not its input.
+
 ## [0.4.8] — 2026-10-06
 
 ### Changed
