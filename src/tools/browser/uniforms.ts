@@ -144,17 +144,21 @@ export async function testUniformResponsiveness(
         // offset controls move pixels without changing the frame's mean color,
         // so the comparison must also be per pixel. Alpha is included: a
         // background-alpha control changes nothing else.
-        const stride = Math.max(1, Math.floor(count / 4096))
+        // A 64x64 grid at cell centers: a flat stride of count/4096 lands on
+        // the same few columns of a power-of-two frame (x = 0, 256, 512, 768
+        // at 1024x1024) and can miss a periodic pattern.
+        const nx = Math.min(64, width), ny = Math.min(64, height)
         const samples: number[] = []
-        for (let p = 0; p < count; p += stride) {
+        for (let g = 0; g < nx * ny; g++) {
+          const p = Math.floor((Math.floor(g / nx) + 0.5) * height / ny) * width + Math.floor((g % nx + 0.5) * width / nx)
           const i = p * 4
           samples.push(pixels[i] / 255, pixels[i + 1] / 255, pixels[i + 2] / 255, pixels[i + 3] / 255)
         }
-        return { mean: [sumR / count, sumG / count, sumB / count, sumA / count], samples }
+        return { mean: [sumR / count, sumG / count, sumB / count, sumA / count], samples, pixels: new Uint8Array(pixels) }
       }
 
       async function captureAll() {
-        const out: Array<{ mean: number[]; samples: number[] }> = []
+        const out: Array<{ mean: number[]; samples: number[]; pixels: Uint8Array }> = []
         for (const t of CAPTURE_TIMES) {
           const m = await captureMetrics(t)
           if (!m) return null
@@ -294,9 +298,9 @@ export async function testUniformResponsiveness(
         return measurable(spec) ? testValuesOf(param, spec)[0] : undefined
       }
 
-      type Capture = Array<{ mean: number[]; samples: number[] }>
+      type Capture = Array<{ mean: number[]; samples: number[]; pixels: Uint8Array }>
       const compare = (reference: Capture, test: Capture) => {
-        let luma = 0, channel = 0, pixel = 0
+        let luma = 0, channel = 0, pixel = 0, strong = 0
         for (let i = 0; i < CAPTURE_TIMES.length; i++) {
           const a = reference[i].mean, b = test[i].mean
           luma = Math.max(luma, Math.abs((b[0] + b[1] + b[2]) / 3 - (a[0] + a[1] + a[2]) / 3))
@@ -307,12 +311,24 @@ export async function testUniformResponsiveness(
             for (let k = 0; k < sa.length; k++) sum += Math.abs(sb[k] - sa[k])
             pixel = Math.max(pixel, sum / sa.length)
           }
+          // A sparse overlay (a few stray hairs) falls between the samples:
+          // count every pixel that changed by more than 16/255 in any channel.
+          const pa = reference[i].pixels, pb = test[i].pixels
+          if (pa.length === pb.length && pa.length > 0) {
+            let n = 0
+            for (let k = 0; k < pa.length; k += 4) {
+              if (Math.abs(pb[k] - pa[k]) > 16 || Math.abs(pb[k + 1] - pa[k + 1]) > 16 ||
+                  Math.abs(pb[k + 2] - pa[k + 2]) > 16 || Math.abs(pb[k + 3] - pa[k + 3]) > 16) n++
+            }
+            strong = Math.max(strong, n / (pa.length / 4))
+          }
         }
-        return { luma, channel, pixel }
+        return { luma, channel, pixel, strong }
       }
       // This function is serialized into the page: the threshold must stay a
       // literal, kept in sync with UNIFORM_RESPONSE_THRESHOLD.
-      const responds = (d: { luma: number; channel: number; pixel: number }) => d.luma > 0.002 || d.channel > 0.002 || d.pixel > 0.002
+      const responds = (d: { luma: number; channel: number; pixel: number; strong: number }) =>
+        d.luma > 0.002 || d.channel > 0.002 || d.pixel > 0.002 || d.strong > 0.0005
 
       // Set the given params, capture a reference, then try the control's
       // test values against it. Returns the strongest response.
@@ -320,7 +336,7 @@ export async function testUniformResponsiveness(
         for (const [param, value] of Object.entries(setup)) setValue(effectGlobals[param].uniform, toUniform(effectGlobals[param], value))
         await settle()
         const reference = Object.keys(setup).length > 0 ? await captureAll() : baseline
-        let best: { luma: number; channel: number; pixel: number } | null = null
+        let best: { luma: number; channel: number; pixel: number; strong: number } | null = null
         let bestValue = testValues[0]
         for (const value of testValues) {
           setValue(spec.uniform, value)
@@ -417,6 +433,7 @@ export async function testUniformResponsiveness(
             luma_diff: measured.luma,
             max_channel_diff: measured.channel,
             pixel_diff: measured.pixel,
+            strong_fraction: measured.strong,
             responds: ok,
             ...(Object.keys(assign).length > 0 ? { enabled_with: assign } : {}),
             ...(context ? { context } : {}),

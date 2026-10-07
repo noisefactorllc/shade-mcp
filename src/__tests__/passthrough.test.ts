@@ -199,6 +199,60 @@ describe('testNoPassthrough (issue #31)', () => {
     expect(w.__uniforms[w.__uniforms.length - 1]).toEqual(['u_glitch', 0])
   })
 
+  it('does not call a sparse overlay that strongly changes a few pixels a passthrough', async () => {
+    // Like strayHair: a few hairs, well under 1% of the frame.
+    const input: FakeTex = { width: 64, height: 64, data: new Uint8Array(64 * 64 * 4).fill(128) }
+    const output = new Uint8Array(input.data)
+    for (let x = 10; x < 20; x++) { const i = (30 * 64 + x) * 4; output[i] = output[i + 1] = output[i + 2] = 255 }
+    installFakeViewer(DEFAULT_GLOBALS, {
+      effectId: 'filter/hair',
+      passes: [{ inputs: { inputTex: 'inputTex' } }],
+      textures: { inputTex: input, global_frame_read: { width: 64, height: 64, data: output } },
+    })
+    const result: any = await testNoPassthrough(makeSession(), 'filter/hair')
+    expect(result.status).toBe('ok')
+    expect(result.strong_fraction).toBeCloseTo(10 / 4096, 6)
+  })
+
+  it('compares against the real input, not a feedback read of the effect\'s own output', async () => {
+    // Like convolutionFeedback: one pass binds inputTex to its own surface.
+    const input: FakeTex = { width: W, height: H, data: variedBytes() }
+    const own: FakeTex = { width: W, height: H, data: variedBytes(60) }
+    installFakeViewer(DEFAULT_GLOBALS, {
+      effectId: 'filter/loop',
+      passes: [
+        { inputs: {}, outputs: { fragColor: 'node_0_out' } },
+        { inputs: { inputTex: 'global_o0' }, outputs: { fragColor: 'node_1_tmp' } },
+        { inputs: { inputTex: 'node_0_out', tmp: 'node_1_tmp' }, outputs: { fragColor: 'global_o0' } },
+      ],
+      textures: { node_0_out: input, global_o0: own, global_frame_read: own },
+    })
+    const result: any = await testNoPassthrough(makeSession(), 'filter/loop')
+    expect(result.inputTexture).toBe('node_0_out')
+    expect(result.status).toBe('ok')
+  })
+
+  it('samples a grid, so a pattern with a power-of-two period is not missed', async () => {
+    // Changes only in columns 100..139 of every 256: a flat stride of
+    // count/4096 = 256 reads columns 0, 256, 512 and 768 and sees nothing.
+    const size = 1024
+    const input = new Uint8Array(size * size * 4).fill(100)
+    const output = new Uint8Array(input)
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        if (x % 256 >= 100 && x % 256 < 140) { const i = (y * size + x) * 4; output[i] = output[i + 1] = output[i + 2] = 101 }
+      }
+    }
+    installFakeViewer(DEFAULT_GLOBALS, {
+      effectId: 'filter/stripes',
+      passes: [{ inputs: { inputTex: 'inputTex' } }],
+      textures: { inputTex: { width: size, height: size, data: input }, global_frame_read: { width: size, height: size, data: output } },
+    })
+    const result: any = await testNoPassthrough(makeSession(), 'filter/stripes')
+    expect(result.changed_fraction).toBe(0)
+    expect(result.similarity).toBeGreaterThan(0)
+  })
+
   it('still reports a passthrough when moving its controls changes nothing', async () => {
     const input: FakeTex = { width: W, height: H, data: variedBytes() }
     installFakeViewer(DEFAULT_GLOBALS, {

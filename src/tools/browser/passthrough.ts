@@ -80,11 +80,20 @@ export async function testNoPassthrough(
       const PIPELINE_INPUTS = ['inputTex', 'inputTex3d', 'o0', 'o1', 'o2', 'o3', 'o4', 'o5', 'o6', 'o7']
       const isPipelineInput = (name: string) => PIPELINE_INPUTS.includes(name) || renderer.isStarterEffect?.(name) === true
 
+      // A pass that reads a texture this pass or a later one writes is
+      // reading the effect's own previous output (a feedback loop such as
+      // convolutionFeedback's selfTex), not its input.
+      const passes: any[] = pipeline.graph?.passes || []
+      const writtenAt = new Map<string, number>()
+      passes.forEach((pass: any, index: number) => {
+        for (const id of Object.values(pass.outputs || {})) if (!writtenAt.has(String(id))) writtenAt.set(String(id), index)
+      })
       let consumedInput: { key: string; id: string } | null = null
-      for (const pass of (pipeline.graph?.passes || [])) {
+      for (const [index, pass] of passes.entries()) {
         const inputs = pass.inputs || {}
         for (const key of Object.keys(inputs)) {
           const id = String(inputs[key])
+          if ((writtenAt.get(id) ?? -1) >= index) continue
           if (isPipelineInput(key) || isPipelineInput(id)) {
             consumedInput = { key, id }
             break
@@ -170,14 +179,28 @@ export async function testNoPassthrough(
       // Compare at two paused times: a time-driven filter (a scroll, a
       // drift) can be the identity at t=0 and still modify its input.
       const COMPARE_TIMES = [0, 0.37]
+      // Pixel indices of a 64x64 grid at cell centers. A flat stride of
+      // count/4096 lands on the same few columns of a power-of-two frame
+      // (x = 0, 256, 512, 768 at 1024x1024) and can miss a periodic pattern.
+      const sampleGrid = (width: number, height: number): number[] => {
+        const nx = Math.min(64, width), ny = Math.min(64, height), out: number[] = []
+        for (let gy = 0; gy < ny; gy++) {
+          for (let gx = 0; gx < nx; gx++) {
+            out.push(Math.floor((gy + 0.5) * height / ny) * width + Math.floor((gx + 0.5) * width / nx))
+          }
+        }
+        return out
+      }
       type Frame = { pixels: Uint8Array; width: number; height: number }
-      type Measured = { meanDiff: number; changedFraction: number }
+      type Measured = { meanDiff: number; changedFraction: number; strongFraction: number }
       // A passthrough leaves nearly every pixel as it was: the mean
       // difference stays within the threshold AND at most 1% of the sampled
       // pixels change. A filter that subtly changes most pixels (a mild
       // blur) modifies its input even when its mean difference is small.
       const threshold = 0.01
-      const unchanged = (m: Measured) => m.meanDiff <= threshold && m.changedFraction <= threshold
+      // A sparse overlay is not a passthrough: more than 0.05% of all pixels
+      // changed strongly means the filter drew something.
+      const unchanged = (m: Measured) => m.meanDiff <= threshold && m.changedFraction <= threshold && m.strongFraction <= 0.0005
 
       // The largest output-to-input change over the compare times; an error
       // result when a frame cannot be read.
@@ -210,9 +233,8 @@ export async function testNoPassthrough(
           // changed by more than 2/255 in any channel. Only RGB counts: alpha
           // is a present detail, not effect output.
           const count = Math.min(inputFrame.width * inputFrame.height, outputFrame.width * outputFrame.height)
-          const stride = Math.max(1, Math.floor(count / 4096))
           let diffSum = 0, changed = 0, samples = 0
-          for (let i = 0; i < count; i += stride) {
+          for (const i of sampleGrid(Math.min(inputFrame.width, outputFrame.width), Math.min(inputFrame.height, outputFrame.height))) {
             const idx = i * 4
             const dr = Math.abs(outputFrame.pixels[idx] - inputFrame.pixels[idx])
             const dg = Math.abs(outputFrame.pixels[idx + 1] - inputFrame.pixels[idx + 1])
@@ -221,11 +243,25 @@ export async function testNoPassthrough(
             if (dr > 2 || dg > 2 || db > 2) changed++
             samples++
           }
+          // A sparse overlay (a few stray hairs) changes too few pixels for
+          // the sample to see, but changes them strongly: count every pixel
+          // that moved by more than 16/255 in any channel.
+          let strong = 0
+          for (let i = 0; i < count; i++) {
+            const idx = i * 4
+            if (Math.abs(outputFrame.pixels[idx] - inputFrame.pixels[idx]) > 16 ||
+                Math.abs(outputFrame.pixels[idx + 1] - inputFrame.pixels[idx + 1]) > 16 ||
+                Math.abs(outputFrame.pixels[idx + 2] - inputFrame.pixels[idx + 2]) > 16) strong++
+          }
           const meanDiff = diffSum / (samples * 3 * 255)
           const changedFraction = changed / samples
+          const strongFraction = strong / count
+          const strongest = Math.max(strongFraction, worst ? worst.strongFraction : 0)
           if (!worst || changedFraction > worst.changedFraction ||
               (changedFraction === worst.changedFraction && meanDiff > worst.meanDiff)) {
-            worst = { meanDiff, changedFraction }
+            worst = { meanDiff, changedFraction, strongFraction: strongest }
+          } else {
+            worst.strongFraction = strongest
           }
         }
         return worst!
@@ -290,6 +326,7 @@ export async function testNoPassthrough(
         isFilterEffect: true,
         similarity: meanDiff,
         changed_fraction: changedFraction,
+        strong_fraction: reported.strongFraction,
         threshold,
         inputTexture: consumedInput.id,
         ...(identityAtDefaults && !isPassthrough ? { identity_at_defaults: true, varied } : {}),

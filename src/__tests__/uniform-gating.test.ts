@@ -276,6 +276,17 @@ describe('testUniformResponsiveness: controls inert at defaults', () => {
     expect(balance.context).toEqual({ shadowTint: [0.75, 0.75, 0.75] })
   })
 
+  it('counts a control that strongly changes a few pixels as responsive', async () => {
+    // Like strayHair density: one fewer short hair, a change the per-pixel
+    // mean cannot see.
+    const specs = { density: { uniform: 'u_density', type: 'float', min: 0, max: 1, default: 0.5 } }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v, _t, px) => (px === 3 && v.u_density > 0.4 ? 1 : 0.3))
+    ;(globalThis as any).window[DEFAULT_GLOBALS.canvasRenderer].canvas = { width: 40, height: 40 }
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    expect(result.status).toBe('ok')
+    expect(result.uniforms[0].strong_fraction).toBeCloseTo(1 / 1600, 6)
+  })
+
   it('skips params the UI hides (ui.control: false)', async () => {
     const specs = {
       amount: { uniform: 'u_amount', type: 'float', min: 0, max: 1, default: 0.5 },
