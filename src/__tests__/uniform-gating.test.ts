@@ -390,6 +390,18 @@ describe('testUniformResponsiveness: controls inert at defaults', () => {
     expect(result.status).toBe('fail')
   })
 
+  it('tests a member enum by switching to other members from the renderer\'s enum registry', async () => {
+    const specs = { channel: { uniform: 'u_channel', type: 'member', enum: 'channel', default: 'channel.r' } }
+    const enums = { 'channel.r': 0, 'channel.g': 1, 'channel.b': 2 }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v) => 0.2 + 0.2 * v.u_channel, undefined, enums)
+    ;(globalThis as any).window[DEFAULT_GLOBALS.canvasRenderer].enums = {
+      channel: { r: { type: 'Number', value: 0 }, g: { type: 'Number', value: 1 }, b: { type: 'Number', value: 2 } },
+    }
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    expect(result.status).toBe('ok')
+    expect(result.uniforms[0].test_value).toBe('channel.g')
+  })
+
   it('lists a control it cannot move as untested instead of leaving it out', async () => {
     const specs = {
       amount: { uniform: 'u_amount', type: 'float', min: 0, max: 1, default: 0.5 },

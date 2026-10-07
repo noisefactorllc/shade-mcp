@@ -317,6 +317,16 @@ export async function testUniformResponsiveness(
             .filter((v) => v !== null && v !== undefined && !same(toUniform(spec, v), toUniform(spec, start)))
           return others.length > 0 ? others.slice(0, 2) : null
         }
+        // A member enum lists its members in the renderer's enum registry
+        // (enums.oscType.noise1d = { value: 5 }); its values are member paths.
+        const members = spec.type === 'member' && spec.enum ? renderer?.enums?.[spec.enum] : null
+        if (members && typeof members === 'object') {
+          const others = Object.entries(members)
+            .filter(([, entry]: [string, any]) => typeof entry === 'number' || typeof entry?.value === 'number')
+            .map(([member]) => `${spec.enum}.${member}`)
+            .filter((path) => !same(toUniform(spec, path), toUniform(spec, start)))
+          return others.length > 0 ? others.slice(0, 2) : null
+        }
         if (typeof spec.min !== 'number' || typeof spec.max !== 'number' || spec.min === spec.max) return null
         const startNumber = start as number
         const range = spec.max - spec.min
@@ -330,9 +340,10 @@ export async function testUniformResponsiveness(
       const untestedReason = (param: string, spec: any): string | null => {
         if (spec.type === 'button') return 'a button triggers an action rather than holding a value'
         if (testValuesOf(param, spec) === null) {
-          return spec.type === 'member' && !spec.choices
-            ? 'an enum whose choices the definition does not list'
-            : 'no other value to set at run time'
+          if (spec.type === 'surface') return 'a surface input, set by the program rather than a value'
+          return spec.type === 'member'
+            ? 'an enum whose members are not available'
+            : 'no range, choices or other value to set at run time'
         }
         return null
       }
