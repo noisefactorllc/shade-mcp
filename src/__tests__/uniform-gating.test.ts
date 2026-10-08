@@ -344,7 +344,11 @@ describe('testUniformResponsiveness: controls inert at defaults', () => {
     expect(dead.responds).toBe(null)
     expect(dead.unstable).toBe(true)
     expect(result.tested_uniforms).toEqual(['dead:unstable'])
-    expect(result.status).toBe('skipped')
+    // The control was set and captured but got no verdict: the check has no
+    // verdict either (error), never ok, and not skipped (it was testable).
+    expect(result.status).toBe('error')
+    expect(result.details).toContain('gave no verdict')
+    expect(result.details).toContain('dead')
   })
 
   it('reads start values from the effect passes, where the viewer writes program values', async () => {
@@ -472,6 +476,10 @@ describe('testUniformResponsiveness: controls inert at defaults', () => {
     const dir = result.uniforms.find((u: any) => u.name === 'dir')
     expect(dir.responds).toBe(null)
     expect(dir.unstable).toBe(true)
+    // mix passes, dir has no verdict: the effect is not reported ok.
+    expect(result.tested_uniforms).toEqual(['mix:pass', 'dir:unstable'])
+    expect(result.status).toBe('error')
+    expect(result.details).toContain('dir')
   })
 
   it('bounds the retries for an effect with many controls', async () => {

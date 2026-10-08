@@ -20,8 +20,13 @@ const UNIFORM_SPECS: Record<string, any> = {
   boom: { uniform: 'u_boom', type: 'float', min: 0, max: 1, default: 0.5 },
 }
 
-function installFakeViewer(globals: ViewerGlobals, specs: Record<string, any>): void {
+// selfChanging models an output that changes on its own between renders (a
+// simulation or feedback effect stepping on every render): a per-pixel ripple
+// that moves one pixel per frame. The frame mean stays the same, so only the
+// per-pixel comparison sees the change.
+function installFakeViewer(globals: ViewerGlobals, specs: Record<string, any>, options: { selfChanging?: boolean } = {}): void {
   const w: any = {}
+  let frame = 0
   const values: Record<string, number> = {}
   for (const spec of Object.values(specs) as any[]) {
     values[spec.uniform] = spec.default ?? spec.min
@@ -34,8 +39,9 @@ function installFakeViewer(globals: ViewerGlobals, specs: Record<string, any>): 
         readPixels: (_x: number, _y: number, _wd: number, _ht: number, _f: number, _t: number, out: Uint8Array) => {
           // The fake shader reads only u_amount; every other uniform is a no-op.
           const v = w.__values.u_amount
-          const c = Math.round(v * 255)
           for (let i = 0; i < out.length; i += 4) {
+            const ripple = ((i / 4 + frame) % 4) / 4 * 0.1
+            const c = Math.round((options.selfChanging ? v * 0.6 + ripple : v) * 255)
             out[i] = c; out[i + 1] = c; out[i + 2] = c; out[i + 3] = 255
           }
         },
@@ -55,6 +61,7 @@ function installFakeViewer(globals: ViewerGlobals, specs: Record<string, any>): 
   w[globals.canvasRenderer] = {
     canvas: { width: 2, height: 2 },
     render: () => {
+      frame++
       if ('u_boom' in w.__values && w.__values.u_boom !== 0.5) throw new Error('render exploded')
     },
   }
@@ -190,5 +197,45 @@ describe('testUniformResponsiveness result contract', () => {
     expect(result.status).toBe('skipped')
     expect(result.details).toBe('No uniform could be measured; untested: fixed, kind')
     expect(result.tested_uniforms).toEqual(['fixed:untested', 'kind:untested'])
+  })
+
+  it('reports non-ok when the output changes on its own and one control gets no verdict', async () => {
+    // A self-changing output with one live and one dead control: the live
+    // control moves the output far beyond the output's own change (pass), and
+    // the dead one cannot be told apart from that change (unstable, no
+    // verdict). A control without a verdict must not leave the status ok.
+    installFakeViewer(DEFAULT_GLOBALS, {
+      amount: UNIFORM_SPECS.amount,
+      unused: UNIFORM_SPECS.unused,
+    }, { selfChanging: true })
+    const session = makeSession()
+    const result = await testUniformResponsiveness(session, 'synth/noise')
+
+    expect(result.tested_uniforms).toEqual(['amount:pass', 'unused:unstable'])
+    expect(result.status).not.toBe('ok')
+    expect(result.status).toBe('error')
+    expect(result.details).toContain('unused')
+    expect(result.details).not.toMatch(/^Uniforms affect output/)
+    const envelope = toolResult(result)
+    expect(JSON.parse(envelope.content[0].text).outcome).toBe('error')
+    expect(envelope.isError).toBe(true)
+    // The measured deltas stay in the result for every tested control,
+    // including the one without a verdict, beside the threshold.
+    expect(result.threshold).toBe(UNIFORM_RESPONSE_THRESHOLD)
+    const byName = Object.fromEntries((result.uniforms as any[]).map((e) => [e.name, e]))
+    expect(byName.amount.responds).toBe(true)
+    expect(byName.unused.responds).toBe(null)
+    expect(byName.unused.unstable).toBe(true)
+    for (const name of ['amount', 'unused']) {
+      expect(typeof byName[name].test_value).toBe('number')
+      expect(typeof byName[name].luma_diff).toBe('number')
+      expect(typeof byName[name].max_channel_diff).toBe('number')
+      expect(typeof byName[name].pixel_diff).toBe('number')
+    }
+    // The live control moved the frame mean; the dead one did not, and the
+    // output's own change between renders is reported beside it.
+    expect(byName.amount.luma_diff).toBeGreaterThan(0.1)
+    expect(byName.unused.luma_diff).toBe(0)
+    expect(byName.unused.noise.pixel).toBeGreaterThan(UNIFORM_RESPONSE_THRESHOLD)
   })
 })

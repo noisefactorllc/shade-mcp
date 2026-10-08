@@ -3,6 +3,20 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **`testUniformResponsiveness` no longer reports `ok` with a control left
+  without a verdict.** 0.4.10 left `unstable` controls (the output changes
+  between renders on its own, and the control did not move it beyond that
+  change) out of the status, so a feedback or simulation effect with one live
+  control and one dead control returned `ok`. Any `unstable` control now makes
+  the status `error`, like a control that could not be measured, and
+  `details` names it. An effect whose only measured controls are `unstable`
+  is `error`, not `skipped`; `skipped` now means that no control could be set
+  at run time. Each `unstable` entry keeps its measured deltas and `noise`.
+
 ## [0.4.10] — 2026-10-07
 
 ### Changed

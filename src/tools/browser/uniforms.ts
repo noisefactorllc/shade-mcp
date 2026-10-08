@@ -616,19 +616,25 @@ export async function testUniformResponsiveness(
 
       let status: string
       let details: string
-      const measuredCount = tested.length - gatedNames.length - unstableNames.length - untestedNames.length
+      // Every control the check set and captured counts, including one that
+      // got no verdict (unstable). Only gated and untested controls, which
+      // cannot be set at run time, are left out.
+      const measuredCount = tested.length - gatedNames.length - untestedNames.length
       if (measuredCount === 0) {
         status = 'skipped'
         details = 'No uniform could be measured'
       } else {
         const problems: string[] = []
         if (errorNames.length > 0) problems.push(`could not be measured: ${errorNames.join(', ')}`)
+        if (unstableNames.length > 0) problems.push(`gave no verdict (the output changes between renders on its own): ${unstableNames.join(', ')}`)
         if (failedNames.length > 0) problems.push(`did not affect output: ${failedNames.join(', ')}`)
         if (problems.length > 0) {
           // A uniform that was measured and did not move the output is a
-          // negative verdict (fail); one that could not be measured leaves
-          // the check without a verdict (error).
-          status = errorNames.length > 0 ? 'error' : 'fail'
+          // negative verdict (fail). One that could not be measured, or whose
+          // effect cannot be told apart from the output's own change between
+          // renders (unstable), leaves the check without a verdict (error):
+          // the effect is never reported ok with a control left unjudged.
+          status = errorNames.length > 0 || unstableNames.length > 0 ? 'error' : 'fail'
           details = `Uniforms ${problems.join('; ')}`
         } else {
           status = 'ok'
@@ -636,7 +642,6 @@ export async function testUniformResponsiveness(
         }
       }
       if (gatedNames.length > 0) details += `; gated (not testable at run time): ${gatedNames.join(', ')}`
-      if (unstableNames.length > 0) details += `; no verdict, output changes between renders on its own: ${unstableNames.join(', ')}`
       if (untestedNames.length > 0) details += `; untested: ${untestedNames.join(', ')}`
       if (settleTimedOut) details += `; an async overlay did not settle within ${settleMs} ms`
 
@@ -677,7 +682,7 @@ export async function testUniformResponsiveness(
 export function registerTestUniformResponsiveness(server: McpServer): void {
   server.tool(
     'testUniformResponsiveness',
-    "For each uniform control the tool finds two values that differ from the value the loaded program set: a range control's farther 25%/75% point and its 38.2% point, a dropdown's other choices, a boolean's opposite, or a vector moved a quarter of its range. It first opens the control's ui.enabledBy gate by setting the gate params (enabled_with). It captures the output twice (the second against the first measures how much the output changes between renders on its own), then sets each value and compares at paused t=0 and t=0.37. A control responds when the luma, a per-channel mean or the per-pixel mean (64x64 grid) changes by more than 0.002, or more than 0.05% of all pixels change by more than 16/255 (strong_fraction); when the output changes on its own, only well beyond that change. A control that does not respond is retried with one other control moved (context). Results per uniform: pass, fail, error, gated (a compile-time define or a gate that cannot be opened), unstable (no verdict: the output changes between renders by more than the thresholds), or untested (no other value can be set at run time). Status is ok when at least one control was measured and every measured control responded, fail when one did not, error when one could not be measured, skipped when none could be measured. Async overlays are awaited, up to the session timeout (settle_timed_out).",
+    "For each uniform control the tool finds two values that differ from the value the loaded program set: a range control's farther 25%/75% point and its 38.2% point, a dropdown's other choices, a boolean's opposite, or a vector moved a quarter of its range. It first opens the control's ui.enabledBy gate by setting the gate params (enabled_with). It captures the output twice (the second against the first measures how much the output changes between renders on its own), then sets each value and compares at paused t=0 and t=0.37. A control responds when the luma, a per-channel mean or the per-pixel mean (64x64 grid) changes by more than 0.002, or more than 0.05% of all pixels change by more than 16/255 (strong_fraction); when the output changes on its own, only well beyond that change. A control that does not respond is retried with one other control moved (context). Results per uniform: pass, fail, error, gated (a compile-time define or a gate that cannot be opened), unstable (no verdict: the output changes between renders by more than the thresholds), or untested (no other value can be set at run time). Status is ok when at least one control was measured and every measured control responded; error when one could not be measured or got no verdict (unstable); otherwise fail when one did not respond; skipped when no control could be set at run time (every control gated or untested). Async overlays are awaited, up to the session timeout (settle_timed_out).",
     testUniformResponsivenessSchema,
     async (args: any) => {
       const config = getConfig()
