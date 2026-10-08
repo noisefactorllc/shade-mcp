@@ -161,9 +161,7 @@ In `~/.codeium/windsurf/mcp_config.json`:
 
 ### Result envelope
 
-Every tool returns JSON text in one envelope. The one exception is an
-argument that fails the tool's input schema: the MCP SDK rejects it before
-the tool runs, as a plain-text `isError` result.
+Every tool result's text is JSON in one envelope, errors included.
 
 - A single result carries a top-level `outcome`, computed from the tool's
   own `status`: `ok` (the check passed or the query answered), `fail` (the
@@ -184,8 +182,12 @@ the tool runs, as a plain-text `isError` result.
   result, or a batch in which every entry is an `error`. A `fail` verdict is
   a successful call and does not set `isError`.
 - Errors raised inside a tool before it reaches its own handling, such as an
-  unresolvable effect selector, arrive in the same envelope:
-  `{ "outcome": "error", "status": "error", "error": "..." }`.
+  unresolvable effect selector, and calls the MCP SDK rejects before the
+  tool runs (an argument that fails the tool's input schema, an unknown
+  tool) arrive in the same envelope with `isError`:
+  `{ "outcome": "error", "status": "error", "error": "..." }`. For a
+  rejected argument, `error` is the SDK's message, for example
+  `MCP error -32602: Input validation error: ...`.
 
 ### Browser Tools (8)
 

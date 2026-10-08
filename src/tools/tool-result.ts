@@ -91,13 +91,65 @@ export function toolResult(payload: unknown, images: Array<{ data: string; mimeT
   }
 }
 
+/** Whether a tool result's text is already the JSON envelope (an object with an `outcome`). */
+function isEnvelope(result: { content?: Array<{ type?: string; text?: unknown }> }): boolean {
+  const first = result.content?.[0]
+  if (first?.type !== 'text' || typeof first.text !== 'string') return false
+  try {
+    const body = JSON.parse(first.text)
+    return typeof body === 'object' && body !== null && !Array.isArray(body) && typeof body.outcome === 'string'
+  } catch {
+    return false
+  }
+}
+
 /**
- * Routes every tool registered on `server` through the envelope, including
- * errors thrown before a handler reaches its own per-effect try block (for
- * example an unresolvable effect selector). Without this the MCP SDK turns
- * such a throw into a bare-text error a client cannot parse as JSON.
+ * Puts an error result the MCP SDK built itself into the envelope. The SDK
+ * answers some calls without running a handler: an argument the tool's input
+ * schema rejects ("MCP error -32602: Input validation error: ..."), an
+ * unknown or disabled tool. It returns their message as bare `isError` text.
+ */
+function envelopeSdkError(result: unknown): unknown {
+  if (typeof result !== 'object' || result === null) return result
+  const r = result as { isError?: unknown; content?: Array<{ type?: string; text?: unknown }> }
+  if (r.isError !== true || !Array.isArray(r.content) || isEnvelope(r)) return result
+  const message = r.content
+    .filter((c) => c?.type === 'text' && typeof c.text === 'string')
+    .map((c) => c.text as string)
+    .join('\n')
+  return toolResult({ status: 'error', error: message || 'Tool call failed' })
+}
+
+/** The JSON-RPC method a request schema handles, without importing the SDK. */
+function requestMethod(schema: unknown): unknown {
+  return (schema as { shape?: { method?: { value?: unknown } } } | null)?.shape?.method?.value
+}
+
+/**
+ * Routes every tool result on `server` through the envelope, so a client can
+ * parse every result text as JSON with an `outcome`:
+ *
+ * - errors thrown before a handler reaches its own per-effect try block (for
+ *   example an unresolvable effect selector);
+ * - calls the MCP SDK rejects before any handler runs: an argument that fails
+ *   the tool's input schema, or an unknown tool.
+ *
+ * Without this the SDK turns both into bare-text errors. Apply it before
+ * registering any tool: the SDK installs its `tools/call` handler on the
+ * first registration, and that is where the SDK's own errors are wrapped.
+ * This module does not import the SDK, because the vendored harness bundles
+ * it (scripts/check-dist-externals.mjs).
  */
 export function guardToolErrors<S extends { tool: (...args: any[]) => any }>(server: S): S {
+  const protocol = (server as { server?: { setRequestHandler?: (...args: any[]) => any } }).server
+  if (protocol && typeof protocol.setRequestHandler === 'function') {
+    const setRequestHandler = protocol.setRequestHandler.bind(protocol)
+    protocol.setRequestHandler = (schema: unknown, handler: (...args: any[]) => unknown) => {
+      if (requestMethod(schema) !== 'tools/call') return setRequestHandler(schema, handler)
+      return setRequestHandler(schema, async (...callArgs: any[]) => envelopeSdkError(await handler(...callArgs)))
+    }
+  }
+
   const register = server.tool.bind(server)
   server.tool = ((...args: any[]) => {
     const handler = args[args.length - 1]

@@ -125,4 +125,79 @@ describe('a failing tool call over MCP', () => {
     await client.close()
     await server.close()
   })
+
+  // Issue #32: an argument the input schema rejects never reaches the
+  // handler. The SDK turns it into an isError result, and its text must be
+  // the same JSON envelope, not bare text.
+  async function connectShadeServer() {
+    const server = createShadeServer()
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    const client = new Client({ name: 'test-client', version: '1.0.0' })
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    return { client, close: async () => { await client.close(); await server.close() } }
+  }
+
+  it('returns a JSON error envelope when the argument schema rejects a call', async () => {
+    const { client, close } = await connectShadeServer()
+
+    const result: any = await client.callTool({
+      name: 'renderEffectFrame',
+      arguments: { effect_id: 'synth/noise', backend: 'vulkan' },
+    })
+
+    expect(result.isError).toBe(true)
+    let body: any
+    expect(() => { body = JSON.parse(result.content[0].text) }).not.toThrow()
+    expect(body).toEqual({
+      outcome: 'error',
+      status: 'error',
+      error: expect.stringMatching(/Input validation error.*backend/),
+    })
+
+    await close()
+  })
+
+  it('returns a JSON error envelope from every tool for an argument of the wrong type', async () => {
+    const { client, close } = await connectShadeServer()
+    const { tools } = await client.listTools()
+    expect(tools).toHaveLength(18)
+
+    const checked: string[] = []
+    for (const tool of tools) {
+      // A value of the wrong JSON type for the first typed property: the
+      // schema rejects it before the tool runs.
+      const props = Object.entries((tool.inputSchema as any).properties ?? {}) as Array<[string, any]>
+      const typed = props.find(([, schema]) => typeof schema.type === 'string')
+      if (!typed) continue
+      const [name, schema] = typed
+      const wrong = schema.type === 'object' ? 42 : { not: 'valid' }
+      const result: any = await client.callTool({ name: tool.name, arguments: { [name]: wrong } })
+      expect(result.isError, tool.name).toBe(true)
+      let body: any
+      expect(() => { body = JSON.parse(result.content[0].text) }, tool.name).not.toThrow()
+      expect(body, tool.name).toEqual({ outcome: 'error', status: 'error', error: expect.stringContaining('Input validation error') })
+      checked.push(tool.name)
+    }
+    // Every tool with a parameter took part, so no tool is left out.
+    const withParams = tools.filter((t) => Object.keys((t.inputSchema as any).properties ?? {}).length > 0)
+    expect(checked).toEqual(withParams.map((t) => t.name))
+
+    await close()
+  })
+
+  it('returns a JSON error envelope for a tool the server does not have', async () => {
+    const { client, close } = await connectShadeServer()
+
+    const result: any = await client.callTool({ name: 'noSuchTool', arguments: {} })
+
+    expect(result.isError).toBe(true)
+    expect(JSON.parse(result.content[0].text)).toEqual({
+      outcome: 'error',
+      status: 'error',
+      error: expect.stringContaining('noSuchTool'),
+    })
+
+    await close()
+  })
 })

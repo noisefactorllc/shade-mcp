@@ -17,6 +17,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   is `error`, not `skipped`; `skipped` now means that no control could be set
   at run time. Each `unstable` entry keeps its measured deltas and `noise`.
 
+### Fixed
+
+- **Calls the MCP SDK rejects are in the result envelope too.** An argument
+  that fails a tool's input schema (for example `backend: "vulkan"`) or an
+  unknown tool name returned the SDK's bare text (`MCP error -32602: Input
+  validation error: ...`) with `isError`. It now returns
+  `{ "outcome": "error", "status": "error", "error": "<the SDK's message>" }`
+  with `isError`, so every tool result's text is JSON with an `outcome`.
+
 ## [0.4.10] — 2026-10-07
 
 ### Changed
