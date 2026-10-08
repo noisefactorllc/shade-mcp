@@ -16,6 +16,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `details` names it. An effect whose only measured controls are `unstable`
   is `error`, not `skipped`; `skipped` now means that no control could be set
   at run time. Each `unstable` entry keeps its measured deltas and `noise`.
+- **Batch entries of the viewer verbs keep the requested effect id.** 0.4.10
+  wrote the page's current effect into `effect_id`, over the requested id, so
+  a batch entry for an unknown effect was labelled with the effect the viewer
+  still showed, and two unknown ids got the same label. `effect_id` is now
+  always the requested id, in the library functions and over MCP, and the new
+  `page_effect_id` field carries the effect the page reports (null when the
+  viewer does not expose it). `backend` stays the backend the page reports. A
+  page that shows another effect or renders on another backend still makes
+  the result `status: "error"`. Callers that read `effect_id` as the page's
+  effect read `page_effect_id` instead.
 
 ### Fixed
 

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { BrowserSession, effectSelectionProblem } from '../../harness/browser-session.js'
+import { BrowserSession, effectSelectionProblem, requestIdentity } from '../../harness/browser-session.js'
 import type { EffectSelectionResult, BenchmarkResult } from '../../harness/types.js'
 import { getConfig } from '../../config.js'
 import { resolveEffectIds } from '../resolve-effects.js'
@@ -44,7 +44,7 @@ export async function benchmarkEffectFPS(
         meets_target: false,
         stats: { frame_count: 0, avg_frame_time_ms: 0, jitter_ms: 0, min_frame_time_ms: 0, max_frame_time_ms: 0 },
         error: `Backend switch failed: ${errorMessage(err)}`,
-        ...(failed.effectId ? { effect_id: failed.effectId } : {}),
+        ...requestIdentity(effectId, failed.effectId),
       }
     }
 
@@ -65,7 +65,7 @@ export async function benchmarkEffectFPS(
         meets_target: false,
         stats: { frame_count: 0, avg_frame_time_ms: 0, jitter_ms: 0, min_frame_time_ms: 0, max_frame_time_ms: 0 },
         error: problem,
-        ...(selection.effectId ? { effect_id: selection.effectId } : {}),
+        ...requestIdentity(effectId, selection.effectId),
       }
     }
 
@@ -151,7 +151,7 @@ export async function benchmarkEffectFPS(
       status: 'ok' as const,
       // The backend the page reported, not the requested value (issue #34).
       backend: selection.backend,
-      ...(selection.effectId ? { effect_id: selection.effectId } : {}),
+      ...requestIdentity(effectId, selection.effectId),
       ...(options.resolution ? { requested_resolution: options.resolution } : {}),
       ...(frame ? { frame } : {}),
       ...(resolutionMismatch ? {
@@ -184,11 +184,12 @@ export function registerBenchmarkEffectFPS(server: McpServer): void {
         const results = []
         for (const id of effectIds) {
           try {
-            results.push({ effect_id: id, ...await benchmarkEffectFPS(session, id, {
+            // The verb labels its result with the requested id (issue #34).
+            results.push(await benchmarkEffectFPS(session, id, {
               targetFps: args.target_fps,
               durationSeconds: args.duration_seconds,
               resolution: args.resolution,
-            }) })
+            }))
           } catch (err) {
             results.push({ effect_id: id, status: 'error', error: err instanceof Error ? err.message : String(err) })
           }

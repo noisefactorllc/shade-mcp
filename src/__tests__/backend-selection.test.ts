@@ -1,4 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { BrowserSession } from '../harness/browser-session.js'
 import { DEFAULT_GLOBALS, type ViewerGlobals } from '../harness/types.js'
 import { compileEffect } from '../tools/browser/compile.js'
@@ -9,6 +11,7 @@ import { testNoPassthrough } from '../tools/browser/passthrough.js'
 import { testPixelParity } from '../tools/browser/parity.js'
 import { resetBrowserQueue } from '../harness/browser-queue.js'
 import { getRefCount, releaseServer } from '../harness/server-manager.js'
+import { createShadeServer } from '../server.js'
 
 // Issue #34: viewer-based verbs must bind their result to the requested
 // effect and backend. The fake viewer models the real noisemaker demo
@@ -57,6 +60,10 @@ interface FakeViewerOptions {
   // Canvas size the renderer reports while on the wgsl backend (default
   // 4x4) — lets the two parity legs capture at different resolutions.
   webgpuCanvas?: { width: number; height: number }
+  // Effect ids the viewer does not know: their selection is ignored and the
+  // viewer keeps showing the effect it had, as the noisemaker demo does for
+  // an id that is not in its effect list.
+  unknownEffects?: string[]
 }
 
 function installFakeViewer(globals: ViewerGlobals, options: FakeViewerOptions): any {
@@ -115,6 +122,7 @@ function installFakeViewer(globals: ViewerGlobals, options: FakeViewerOptions): 
     dispatchEvent(ev: Event) {
       if (ev.type !== 'change' || options.loadDelayMs === null) return
       const id = selectEl.value
+      if (options.unknownEffects?.includes(id)) return
       if (options.exposeIdentity !== false) w[globals.currentEffect] = entry(id)
       if (!options.silentSelect) state.status = `selected ${id}`
       if (options.compileInFlight) {
@@ -207,6 +215,10 @@ describe('browser verbs bind results to the requested effect (issue #34)', () =>
 
       // No silent ok carrying the previous effect's graph.
       expect(result.status).toBe('error')
+      // The result is labelled with the request, and the page's own effect
+      // is reported beside it.
+      expect(result.effect_id).toBe('synth/requested')
+      expect(result.page_effect_id).toBe('synth/previous')
       const message = result.message ?? result.error ?? result.details
       expect(message).toMatch(/Timed out|showing synth\/previous/)
       // The previous graph's passes are never reported as fresh ok results.
@@ -221,6 +233,7 @@ describe('browser verbs bind results to the requested effect (issue #34)', () =>
 
       expect(result.status).not.toBe('error')
       expect(result.effect_id).toBe('synth/requested')
+      expect(result.page_effect_id).toBe('synth/requested')
       expect(result.backend).toBe('WebGL2')
       if (name === 'compileEffect') {
         // Passes come from the graph built AFTER the selection, not the
@@ -235,6 +248,7 @@ describe('browser verbs bind results to the requested effect (issue #34)', () =>
 
       expect(result.status).not.toBe('error')
       expect(result.effect_id).toBe('filter/scanlineError')
+      expect(result.page_effect_id).toBe('filter/scanlineError')
     })
 
     it(`${name} returns status error when the viewer ends up showing a different effect`, async () => {
@@ -244,7 +258,8 @@ describe('browser verbs bind results to the requested effect (issue #34)', () =>
       const result = await run(session, 'synth/requested')
 
       expect(result.status).toBe('error')
-      expect(result.effect_id).toBe('synth/other')
+      expect(result.effect_id).toBe('synth/requested')
+      expect(result.page_effect_id).toBe('synth/other')
       const message = result.message ?? result.error ?? result.details
       expect(message).toContain('synth/other')
     })
@@ -267,6 +282,7 @@ describe('browser verbs bind results to the requested effect (issue #34)', () =>
 
       expect(result.status).not.toBe('error')
       expect(result.effect_id).toBe('synth/requested')
+      expect(result.page_effect_id).toBe('synth/requested')
       expect(result.backend).toBe('WebGL2')
       // Evidence of a post-selection build: the reported passes come from
       // the graph built AFTER the selection, never from the stale one.
@@ -310,7 +326,8 @@ describe('browser verbs bind results to the requested effect (issue #34)', () =>
       // The failure result still binds to the page: the backend the page is
       // really on, and the effect it is really showing.
       expect(result.backend).toBe('WebGL2')
-      expect(result.effect_id).toBe('synth/previous')
+      expect(result.effect_id).toBe('synth/requested')
+      expect(result.page_effect_id).toBe('synth/previous')
       // The page backend is still the one it started on.
       expect((globalThis as any).window[DEFAULT_GLOBALS.currentBackend]()).toBe('glsl')
     })
@@ -332,6 +349,7 @@ describe('browser verbs bind results to the requested effect (issue #34)', () =>
 
       expect(result.status).not.toBe('error')
       expect(result.effect_id).toBe('synth/requested')
+      expect(result.page_effect_id).toBe('synth/requested')
       expect(result.backend).toBe('WebGL2')
       if (result.passes) {
         expect(result.passes).toEqual([{ id: 'requested-pass', status: 'ok' }])
@@ -351,6 +369,8 @@ describe('browser verbs bind results to the requested effect (issue #34)', () =>
       expect(result.status).toBe('error')
       const message = result.message ?? result.error ?? result.details
       expect(message).toMatch(/does not report which effect/)
+      expect(result.effect_id).toBe('synth/requested')
+      expect(result.page_effect_id).toBe(null)
     })
   }
 
@@ -373,6 +393,7 @@ describe('browser verbs bind results to the requested effect (issue #34)', () =>
 
       expect(result.status).toBe('ok')
       expect(result.effect_id).toBe('synth/requested')
+      expect(result.page_effect_id).toBe('synth/requested')
       expect(result.backend).toBe('WebGPU')
     })
 
@@ -384,7 +405,8 @@ describe('browser verbs bind results to the requested effect (issue #34)', () =>
 
       expect(result.status).toBe('error')
       expect(result.details).toContain('synth/other')
-      expect(result.effect_id).toBe('synth/other')
+      expect(result.effect_id).toBe('synth/requested')
+      expect(result.page_effect_id).toBe('synth/other')
     })
 
     it('fails closed when the viewer does not expose its current effect\'s identity', async () => {
@@ -414,6 +436,7 @@ describe('browser verbs bind results to the requested effect (issue #34)', () =>
       expect(result.status).toBe('error')
       expect(result.details).toMatch(/Capture size mismatch/)
       expect(result.effect_id).toBe('synth/requested')
+      expect(result.page_effect_id).toBe('synth/requested')
       expect(result.backend).toBe('WebGPU')
     })
 
@@ -430,8 +453,99 @@ describe('browser verbs bind results to the requested effect (issue #34)', () =>
       // really on, and the effect it is really showing.
       expect(result.backend).toBe('WebGL2')
       expect(result.effect_id).toBe('synth/requested')
+      expect(result.page_effect_id).toBe('synth/requested')
     })
   })
+})
+
+// Batches over MCP: each entry must stay matched to its request. The six
+// viewer verbs run through the shipped server wiring against the fake viewer
+// (setup() is replaced so no browser launches).
+describe('batch results keep the requested effect id over MCP (issue #34)', () => {
+  const VERB_CALLS: Array<{ tool: string; args: Record<string, unknown>; backend: string }> = [
+    { tool: 'compileEffect', args: { backend: 'webgl2' }, backend: 'WebGL2' },
+    { tool: 'renderEffectFrame', args: { backend: 'webgl2', warmup_frames: 2 }, backend: 'WebGL2' },
+    { tool: 'benchmarkEffectFPS', args: { backend: 'webgl2', duration_seconds: 0.05 }, backend: 'WebGL2' },
+    { tool: 'testUniformResponsiveness', args: { backend: 'webgl2' }, backend: 'WebGL2' },
+    { tool: 'testNoPassthrough', args: { backend: 'webgl2' }, backend: 'WebGL2' },
+    { tool: 'testPixelParity', args: { seed: 7 }, backend: 'WebGPU' },
+  ]
+  let saved: any[]
+
+  beforeEach(() => {
+    resetBrowserQueue()
+    saved = [(globalThis as any).window, (globalThis as any).requestAnimationFrame, (globalThis as any).document]
+    vi.stubEnv('SHADE_TIMEOUT_MS', '300')
+    vi.stubEnv('SHADE_GLOBALS_PREFIX', '__shade')
+    vi.spyOn(BrowserSession.prototype, 'setup').mockImplementation(async function (this: BrowserSession) {
+      this.page = {
+        setViewportSize: async () => {},
+        waitForFunction: async () => {},
+        evaluate: async (fn: (arg: any) => any, arg: any) => fn(arg),
+      } as any
+    })
+    vi.spyOn(BrowserSession.prototype, 'teardown').mockImplementation(async () => {})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllEnvs()
+    ;[(globalThis as any).window, (globalThis as any).requestAnimationFrame, (globalThis as any).document] = saved
+    while (getRefCount() > 0) releaseServer()
+  })
+
+  async function callBatch(tool: string, args: Record<string, unknown>): Promise<{ isError: boolean | undefined; body: any }> {
+    const server = createShadeServer()
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    const client = new Client({ name: 'test-client', version: '1.0.0' })
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    try {
+      const result: any = await client.callTool({ name: tool, arguments: args })
+      return { isError: result.isError, body: JSON.parse(result.content[0].text) }
+    } finally {
+      await client.close()
+      await server.close()
+    }
+  }
+
+  for (const { tool, args, backend } of VERB_CALLS) {
+    it(`${tool}: a batch with one unknown id names that id on its error entry`, async () => {
+      installFakeViewer(DEFAULT_GLOBALS, {
+        requested: 'synth/requested', loadDelayMs: 20, switchBackend: true, unknownEffects: ['nope/two'],
+      })
+
+      const { body } = await callBatch(tool, { ...args, effects: 'synth/requested,nope/two' })
+
+      expect(body.results.map((r: any) => r.effect_id)).toEqual(['synth/requested', 'nope/two'])
+      const [known, unknown] = body.results
+      expect(known.outcome).not.toBe('error')
+      expect(known.page_effect_id).toBe('synth/requested')
+      expect(known.backend).toBe(backend)
+      // The failed entry names the id it was asked for; the effect the page
+      // still shows is reported beside it, never as the entry's id.
+      expect(unknown.outcome).toBe('error')
+      expect(unknown.effect_id).toBe('nope/two')
+      expect(unknown.page_effect_id).toBe('synth/requested')
+      expect(unknown.message ?? unknown.error ?? unknown.details).toContain('nope/two')
+    }, 20000)
+
+    it(`${tool}: a batch of unknown ids labels each entry with its own request`, async () => {
+      installFakeViewer(DEFAULT_GLOBALS, {
+        requested: 'synth/requested', loadDelayMs: 20, switchBackend: true, unknownEffects: ['nope/one', 'nope/two'],
+      })
+
+      const { isError, body } = await callBatch(tool, { ...args, effects: 'nope/one,nope/two' })
+
+      expect(isError).toBe(true)
+      expect(body.outcome).toBe('error')
+      expect(body.results.map((r: any) => r.effect_id)).toEqual(['nope/one', 'nope/two'])
+      for (const entry of body.results) {
+        expect(entry.outcome).toBe('error')
+        expect(entry.page_effect_id).toBe('synth/previous')
+      }
+    }, 20000)
+  }
 })
 
 describe('browser tools select the requested backend', () => {

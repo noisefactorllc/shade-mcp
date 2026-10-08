@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { BrowserSession, effectSelectionProblem } from '../../harness/browser-session.js'
+import { BrowserSession, effectSelectionProblem, requestIdentity } from '../../harness/browser-session.js'
 import type { EffectSelectionResult } from '../../harness/types.js'
 import { getConfig } from '../../config.js'
 import { resolveEffectIds } from '../resolve-effects.js'
@@ -36,7 +36,7 @@ export async function testNoPassthrough(
         similarity: null,
         backend: failed.backend ?? 'unknown',
         details: `Backend switch failed: ${errorMessage(err)}`,
-        ...(failed.effectId ? { effect_id: failed.effectId } : {}),
+        ...requestIdentity(effectId, failed.effectId),
       }
     }
 
@@ -51,7 +51,7 @@ export async function testNoPassthrough(
         similarity: null,
         backend: selection.backend,
         details: problem,
-        ...(selection.effectId ? { effect_id: selection.effectId } : {}),
+        ...requestIdentity(effectId, selection.effectId),
       }
     }
 
@@ -378,12 +378,13 @@ export async function testNoPassthrough(
       }
     }, { globals: session.globals, settleMs: session.timeoutMs })
 
-    // Report the page-confirmed identity (issue #34): the backend the page
-    // actually rendered on, and the effect id the page confirms.
+    // Report the identity (issue #34): the requested effect id, the effect id
+    // the page confirms (page_effect_id), and the backend the page actually
+    // rendered on.
     return {
       ...result,
       backend: selection.backend,
-      ...(selection.effectId ? { effect_id: selection.effectId } : {}),
+      ...requestIdentity(effectId, selection.effectId),
     }
   })
 }
@@ -402,7 +403,8 @@ export function registerTestNoPassthrough(server: McpServer): void {
         const results = []
         for (const id of effectIds) {
           try {
-            results.push({ effect_id: id, ...await testNoPassthrough(session, id) })
+            // The verb labels its result with the requested id (issue #34).
+            results.push(await testNoPassthrough(session, id))
           } catch (err) {
             results.push({ effect_id: id, status: 'error', error: err instanceof Error ? err.message : String(err) })
           }

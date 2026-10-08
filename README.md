@@ -193,6 +193,14 @@ Every tool result's text is JSON in one envelope, errors included.
 
 These tools require Playwright Chromium; all except `runDslProgram` require a viewer (see [Viewer](#viewer)).
 
+Each result of the six viewer verbs (`compileEffect`, `renderEffectFrame`,
+`benchmarkEffectFPS`, `testUniformResponsiveness`, `testNoPassthrough`,
+`testPixelParity`), and each batch entry, carries `effect_id`, the effect id
+that was requested, so entries match their requests. `page_effect_id` is the
+effect the viewer page reports as loaded (null when the viewer does not expose
+it) and `backend` is the backend the page reports. When the page shows another
+effect or renders on another backend, the entry's `status` is `error`.
+
 | Tool | Description |
 |------|-------------|
 | `compileEffect` | Compile a shader effect. Return diagnostics for each pass. Use comma-separated effect IDs for a batch. |

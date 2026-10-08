@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { BrowserSession, effectSelectionProblem } from '../../harness/browser-session.js'
+import { BrowserSession, effectSelectionProblem, requestIdentity } from '../../harness/browser-session.js'
 import type { CompileResult } from '../../harness/types.js'
 import { getConfig } from '../../config.js'
 import { resolveEffectIds } from '../resolve-effects.js'
@@ -34,7 +34,7 @@ export async function compileEffect(
         passes: [],
         message: `Backend switch failed: ${errorMessage(err)}`,
         backend: page.backend ?? 'unknown',
-        ...(page.effectId ? { effect_id: page.effectId } : {}),
+        ...requestIdentity(effectId, page.effectId),
       }
     }
 
@@ -50,7 +50,7 @@ export async function compileEffect(
         passes: selection.passes ?? [],
         message: problem,
         backend: selection.backend,
-        ...(selection.effectId ? { effect_id: selection.effectId } : {}),
+        ...requestIdentity(effectId, selection.effectId),
       }
     }
 
@@ -60,7 +60,7 @@ export async function compileEffect(
       message: 'Compiled successfully',
       // The backend the page reported, not the requested value.
       backend: selection.backend,
-      ...(selection.effectId ? { effect_id: selection.effectId } : {}),
+      ...requestIdentity(effectId, selection.effectId),
     }
   })
 }
@@ -80,7 +80,8 @@ export function registerCompileEffect(server: McpServer): void {
         const results = []
         for (const id of effectIds) {
           try {
-            results.push({ effect_id: id, ...await compileEffect(session, id) })
+            // The verb labels its result with the requested id (issue #34).
+            results.push(await compileEffect(session, id))
           } catch (err) {
             results.push({ effect_id: id, status: 'error', error: err instanceof Error ? err.message : String(err) })
           }

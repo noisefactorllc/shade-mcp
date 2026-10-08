@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { BrowserSession, effectSelectionProblem } from '../../harness/browser-session.js'
+import { BrowserSession, effectSelectionProblem, requestIdentity } from '../../harness/browser-session.js'
 import type { EffectSelectionResult, RenderResult } from '../../harness/types.js'
 import { getConfig } from '../../config.js'
 import { resolveEffectIds } from '../resolve-effects.js'
@@ -42,7 +42,7 @@ export async function renderEffectFrame(
         status: 'error' as const,
         backend: failed.backend ?? 'unknown',
         error: `Backend switch failed: ${errorMessage(err)}`,
-        ...(failed.effectId ? { effect_id: failed.effectId } : {}),
+        ...requestIdentity(effectId, failed.effectId),
         ...(options.resolution ? { requested_resolution: options.resolution } : {}),
       }
     }
@@ -61,7 +61,7 @@ export async function renderEffectFrame(
         status: 'error' as const,
         backend: selection.backend,
         error: problem,
-        ...(selection.effectId ? { effect_id: selection.effectId } : {}),
+        ...requestIdentity(effectId, selection.effectId),
         ...(options.resolution ? { requested_resolution: options.resolution } : {}),
       }
     }
@@ -300,14 +300,15 @@ export async function renderEffectFrame(
         }
       }, { captureImage: options.captureImage ?? false, globals: session.globals, time: options.time ?? null, requested: options.resolution ?? null })
 
-      // The page-confirmed effect id travels with the capture result.
+      // The requested and page-confirmed effect ids travel with the capture
+      // result (issue #34).
       const { pixels, ...captured } = result as RenderResult & { pixels?: string }
       if (pixels !== undefined && captured.frame) {
         captured.metrics = computeImageMetrics(Buffer.from(pixels, 'base64'), captured.frame.width, captured.frame.height)
       }
       return {
         ...captured,
-        ...(selection.effectId ? { effect_id: selection.effectId } : {}),
+        ...requestIdentity(effectId, selection.effectId),
       } as RenderResult
     } finally {
       // Unpause even when the warmup wait or the capture threw, so a failure
@@ -336,13 +337,14 @@ export function registerRenderEffectFrame(server: McpServer): void {
         const results = []
         for (const id of effectIds) {
           try {
-            results.push({ effect_id: id, ...await renderEffectFrame(session, id, {
+            // The verb labels its result with the requested id (issue #34).
+            results.push(await renderEffectFrame(session, id, {
               warmupFrames: args.warmup_frames,
               captureImage: args.capture_image,
               uniforms: args.uniforms,
               time: args.time,
               resolution: args.resolution,
-            }) })
+            }))
           } catch (err) {
             results.push({ effect_id: id, status: 'error', error: err instanceof Error ? err.message : String(err) })
           }

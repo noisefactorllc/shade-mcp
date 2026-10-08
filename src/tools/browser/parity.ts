@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { BrowserSession, effectSelectionProblem } from '../../harness/browser-session.js'
+import { BrowserSession, effectSelectionProblem, requestIdentity } from '../../harness/browser-session.js'
 import type { EffectSelectionResult, ParityResult } from '../../harness/types.js'
 import { getConfig } from '../../config.js'
 import { resolveEffectIds } from '../resolve-effects.js'
@@ -118,7 +118,7 @@ export async function testPixelParity(
   // Each leg must confirm the request on the page (issue #34): the backend
   // switch actually takes effect, and the selection completes only when the
   // page finished building this effect after it was selected.
-  const parityError = (leg: string, problem: string, backend: string, effectId2: string | null, resolution: [number, number]): ParityResult => ({
+  const parityError = (leg: string, problem: string, backend: string, pageEffectId: string | null, resolution: [number, number]): ParityResult => ({
     status: 'error',
     maxDiff: 0,
     meanDiff: 0,
@@ -126,7 +126,7 @@ export async function testPixelParity(
     mismatchPercent: 0,
     resolution,
     details: `${leg}: ${problem}`,
-    ...(effectId2 ? { effect_id: effectId2 } : {}),
+    ...requestIdentity(effectId, pageEffectId),
     ...(backend !== 'unknown' ? { backend } : {}),
   })
   const legProblem = (selection: EffectSelectionResult, requestedBackend: 'webgl2' | 'webgpu'): string | null =>
@@ -184,7 +184,7 @@ export async function testPixelParity(
     return {
       status: 'error', maxDiff: 0, meanDiff: 0, mismatchCount: 0, mismatchPercent: 0,
       resolution: [glslPixels.width, glslPixels.height],
-      ...(leg.effectId ? { effect_id: leg.effectId } : {}),
+      ...requestIdentity(effectId, leg.effectId),
       ...(leg.backend !== 'unknown' ? { backend: leg.backend } : {}),
       details: `Capture size mismatch: glsl ${glslPixels.width}x${glslPixels.height} vs wgsl ${wgslPixels.width}x${wgslPixels.height}`,
     }
@@ -281,7 +281,7 @@ export async function testPixelParity(
     mismatchPercent: Math.round(mismatchPercent * 100) / 100,
     resolution: [w, h],
     // Page-confirmed identity of the final (WebGPU) leg (issue #34).
-    ...(leg.effectId ? { effect_id: leg.effectId } : {}),
+    ...requestIdentity(effectId, leg.effectId),
     ...(leg.backend !== 'unknown' ? { backend: leg.backend } : {}),
     glslSolid: glslSolid.isSolid,
     wgslSolid: wgslSolid.isSolid,
@@ -315,7 +315,8 @@ export function registerTestPixelParity(server: McpServer): void {
         const results = []
         for (const id of effectIds) {
           try {
-            results.push({ effect_id: id, ...await testPixelParity(session, id, { epsilon: args.epsilon, seed: args.seed }) })
+            // The verb labels its result with the requested id (issue #34).
+            results.push(await testPixelParity(session, id, { epsilon: args.epsilon, seed: args.seed }))
           } catch (err) {
             results.push({ effect_id: id, status: 'error', error: err instanceof Error ? err.message : String(err) })
           }

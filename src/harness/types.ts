@@ -62,18 +62,21 @@ export interface CompileResult {
   passes: Array<{ id: string; status: 'ok' | 'error'; errors?: string[] }>
   message: string
   console_errors?: string[]
+  // The requested effect id, always: batch entries match their requests.
+  effect_id: string
   // Page-confirmed effect id: what the viewer reports as its current effect
-  // after the selection completed. Absent when the viewer does not expose the
-  // current effect's identity (the caller's requested id is shown instead).
-  effect_id?: string
+  // after the selection completed, or null when the viewer does not expose
+  // it. It differs from effect_id only on a status 'error' result.
+  page_effect_id: string | null
 }
 
 export interface RenderResult {
   status: 'ok' | 'error'
   backend: string
   error?: string
-  // Page-confirmed effect id, when the viewer exposes it (see CompileResult).
-  effect_id?: string
+  // Requested and page-confirmed effect ids (see CompileResult).
+  effect_id: string
+  page_effect_id: string | null
   // Echo of the `resolution` request, present whenever one was made,
   // including error results (the caller must see the request even when
   // rendering fails).
@@ -90,8 +93,9 @@ export interface BenchmarkResult {
   status: 'ok' | 'error'
   backend: string
   achieved_fps: number
-  // Page-confirmed effect id, when the viewer exposes it (see CompileResult).
-  effect_id?: string
+  // Requested and page-confirmed effect ids (see CompileResult).
+  effect_id: string
+  page_effect_id: string | null
   meets_target: boolean
   // Echo of the `resolution` request, present whenever one was made.
   requested_resolution?: [number, number]
@@ -119,9 +123,10 @@ export interface ParityResult {
   resolution: [number, number]
   details: string
   console_errors?: string[]
-  // Page-confirmed effect id of the final (WebGPU) leg, when the viewer
-  // exposes it (see CompileResult).
-  effect_id?: string
+  // The requested effect id, and the page-confirmed effect id of the last
+  // leg that ran (see CompileResult).
+  effect_id: string
+  page_effect_id: string | null
   // Backend reported by the pipeline during the final (WebGPU) leg.
   backend?: string
   // Solid-color + Y-flip diagnostics (populated by testPixelParity)
