@@ -7,11 +7,29 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      # A release reaches noisemaker, portable and Shade within minutes of the
+      # tag. The tagged commit must already have passed quality on main,
+      # including the job that runs noisemaker's drop tests against this build.
+      # A run still in progress is waited for.
+      - name: Require quality to pass on the tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow quality.yml \
+            --event push --commit "$GITHUB_SHA" --limit 1 \
+            --json databaseId --jq '.[0].databaseId // empty')
+          if [ -z "$run_id" ]; then
+            echo "::error::quality has not run on $GITHUB_SHA. Push the commit to main and let quality pass before tagging."
+            exit 1
+          fi
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status --compact --interval 30
+
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
@@ -41,8 +59,8 @@ jobs:
       # decides the shape consumers receive, and portable extracts it flat and
       # runs index.js straight out of it. Verifying here rather than after
       # publishing means a drop that cannot start never becomes a release —
-      # and since trigger-downstream.yml waits on the asset before dispatching,
-      # no consumer can be handed a broken one.
+      # and since consumers are only told about a published release (the
+      # downstream job below), no consumer can be handed a broken one.
       - name: Smoke-test the tarball as a vendored drop
         run: |
           rm -rf /tmp/drop && mkdir -p /tmp/drop
@@ -54,3 +72,12 @@ jobs:
         with:
           files: shade-mcp-dist.tar.gz
           generate_release_notes: true
+
+  downstream:
+    needs: release
+    permissions:
+      contents: read
+    uses: ./.github/workflows/trigger-downstream.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets: inherit

@@ -121,3 +121,53 @@ jobs:
           PORTABLE: ${{ github.workspace }}/portable
           SHADE_SWIFTSHADER: '1'
         run: node scripts/authored-dsl-smoke.mjs
+
+  # Every release is vendored into noisemaker by its pull-shade-mcp workflow,
+  # which lands the drop only after noisemaker's scripts/test-shade-mcp passes.
+  # This runs the same checks on this build against noisemaker's current main,
+  # so a release that would fail there is caught before it is tagged:
+  # release.yml requires this workflow to pass on the tagged commit.
+  noisemaker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          repository: noisefactorllc/noisemaker
+          path: noisemaker
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            noisemaker/package-lock.json
+
+      # The same tarball release.yml publishes.
+      - name: Build the release tarball
+        run: |
+          npm ci
+          tar -czf "$RUNNER_TEMP/shade-mcp-dist.tar.gz" -C dist .
+
+      - name: Vendor the build into noisemaker
+        working-directory: noisemaker
+        env:
+          SHADE_MCP_TARBALL: ${{ runner.temp }}/shade-mcp-dist.tar.gz
+        run: python3 pull-shade-mcp
+
+      - name: Install noisemaker
+        working-directory: noisemaker
+        run: |
+          npm ci
+          npx playwright install chromium
+
+      - name: Run noisemaker's drop tests
+        working-directory: noisemaker
+        run: scripts/test-shade-mcp

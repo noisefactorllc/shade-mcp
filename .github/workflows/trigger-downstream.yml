@@ -1,9 +1,14 @@
-# Trigger downstream repos to pull latest shade-mcp release
+# Tell the consumers (noisemaker, portable, shade) to vendor a published
+# shade-mcp release. release.yml calls this once the release is published;
+# workflow_dispatch sends a tag again.
 name: Trigger Downstream Updates
 
 on:
-  push:
-    tags: ['v*']
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       tag:
@@ -17,34 +22,17 @@ jobs:
   trigger-downstream:
     runs-on: ubuntu-latest
     steps:
-      - name: Determine tag
-        id: tag
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          else
-            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Wait for release asset
+      - name: Check the release asset is published
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
-          echo "Waiting for release asset on tag $TAG..."
-          for i in $(seq 1 30); do
-            ASSET_URL=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
-              "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG" \
-              | jq -r '.assets[]? | select(.name == "shade-mcp-dist.tar.gz") | .browser_download_url // empty' 2>/dev/null)
-            if [ -n "$ASSET_URL" ]; then
-              echo "Release asset found: $ASSET_URL"
-              exit 0
-            fi
-            echo "Attempt $i/30 - asset not ready, waiting 10s..."
-            sleep 10
-          done
-          echo "Timed out waiting for release asset"
-          exit 1
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[].name' | grep -qx 'shade-mcp-dist.tar.gz'; then
+            echo "::error::release $TAG has no shade-mcp-dist.tar.gz asset"
+            exit 1
+          fi
+          echo "Release $TAG is published with its asset."
 
       - name: Generate GitHub App token
         id: app-token
@@ -60,7 +48,7 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           repository: noisefactorllc/noisemaker
           event-type: shade-mcp-updated
-          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}", "tag": "${{ steps.tag.outputs.tag }}"}'
+          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}", "tag": "${{ inputs.tag }}"}'
 
       - name: Trigger portable
         uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
@@ -68,7 +56,7 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           repository: noisefactorllc/portable
           event-type: shade-mcp-updated
-          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}", "tag": "${{ steps.tag.outputs.tag }}"}'
+          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}", "tag": "${{ inputs.tag }}"}'
 
       - name: Trigger shade
         uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
@@ -76,4 +64,4 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           repository: noisefactorllc/shade
           event-type: shade-mcp-updated
-          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}", "tag": "${{ steps.tag.outputs.tag }}"}'
+          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}", "tag": "${{ inputs.tag }}"}'
