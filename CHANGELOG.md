@@ -3,6 +3,19 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.12] — 2026-10-12
+
+### Fixed
+
+- **The DSL knowledge teaches only canonical parameter names.** Noisemaker
+  1.0.289 retired every parameter alias, so a program that passes an old name
+  (`noiseType`, `loopAmp`, `mixAmt`, `aberrationAmt` and others) fails to
+  compile. The exemplars and the effect catalog used 298 old names, and
+  Shade's model copied them. Each rename follows the effect the call resolves
+  to through its `search` order: `classicNoisedeck` `noise` keeps `xScale` and
+  `yScale`, which are its real parameters. No exemplar that compiled before
+  fails now.
+
 ## [0.4.11] — 2026-10-09
 
 ### Changed
