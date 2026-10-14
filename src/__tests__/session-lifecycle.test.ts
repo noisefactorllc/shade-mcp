@@ -101,6 +101,23 @@ describe('browser session lifecycle', () => {
     await expect(session.setup()).rejects.toThrow('launch failed')
     const args = vi.mocked(chromium.launch).mock.calls.at(-1)?.[0]?.args ?? []
     expect(args).not.toContain('--enable-unsafe-swiftshader')
+    expect(args).not.toContain('--enable-unsafe-webgpu')
+  })
+
+  it('launches WebGPU-capable when the session asks for capability on a WebGL2 backend', async () => {
+    // Verbs that switch backends mid-session (testPixelParity) never relaunch
+    // the browser, so the WebGL2 session must launch with the WebGPU flags or
+    // a GPU-less host cannot satisfy the WebGPU leg at all.
+    const session = new BrowserSession({ backend: 'webgl2', webgpuCapable: true, headless: true,
+      viewerPort: 0, viewerRoot: tmpDir, effectsDir: tmpEffects })
+    await expect(session.setup()).rejects.toThrow('launch failed')
+    const args = vi.mocked(chromium.launch).mock.calls.at(-1)?.[0]?.args ?? []
+    expect(args).toContain('--enable-unsafe-webgpu')
+    expect(args).toContain('--enable-features=Vulkan')
+    expect(args).toContain('--use-angle=vulkan')
+    // The capability flags decide what the BROWSER can reach; the session
+    // backend still reports what the viewer renders first.
+    expect(session.backend).toBe('webgl2')
   })
 
   it('enables the software rasterizer when SHADE_SWIFTSHADER is set', async () => {

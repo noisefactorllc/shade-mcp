@@ -369,6 +369,7 @@ export class BrowserSession {
     this.timeoutMs = opts.timeoutMs ?? config.timeoutMs
     this.options = {
       backend: opts.backend,
+      webgpuCapable: opts.webgpuCapable ?? false,
       blankPage: opts.blankPage ?? false,
       // Headless by default: a visible window on every tool call is noise, and
       // launching headed fails outright wherever there is no display. Opt back
@@ -389,11 +390,19 @@ export class BrowserSession {
       this.baseUrl = await acquireServer(this.options.viewerPort, this.options.viewerRoot, this.options.effectsDir)
       this._serverAcquired = true
 
-      const launchOptions = getBrowserLaunchOptions(this.options.headless, this.options.backend)
-      // Only WebGPU sessions run through Dawn's Vulkan backend; pointing the
-      // loader at the SwiftShader ICD must not change what the WebGL2 tools
-      // render on machines with a real GL stack.
-      if (this.options.backend === 'webgpu' && swiftshaderEnabled()) {
+      // WebGPU-capable sessions need the WebGPU launch flags even though the
+      // viewer starts on another backend: the flags decide whether the BROWSER
+      // can obtain a WebGPU adapter, and verbs that switch backends mid-session
+      // (pixel parity) never relaunch. The backend option still decides what
+      // the viewer renders first.
+      const launchBackend: Backend = this.options.webgpuCapable && this.options.backend !== 'webgpu'
+        ? 'webgpu'
+        : this.options.backend
+      const launchOptions = getBrowserLaunchOptions(this.options.headless, launchBackend)
+      // Only WebGPU-flagged sessions run through Dawn's Vulkan backend; pointing
+      // the loader at the SwiftShader ICD must not change what the plain WebGL2
+      // tools render on machines with a real GL stack.
+      if (launchBackend === 'webgpu' && swiftshaderEnabled()) {
         const env = swiftshaderVulkanEnv()
         if (Object.keys(env).length > 0) {
           // Merge the ICD variables over the runner's environment instead of

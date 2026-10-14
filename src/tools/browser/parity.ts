@@ -309,7 +309,11 @@ export function registerTestPixelParity(server: McpServer): void {
     async (args: any) => {
       const config = getConfig()
       const effectIds = resolveEffectIds(args, config.effectsDir)
-      const session = new BrowserSession({ backend: 'webgl2' })
+      // The verb switches to WebGPU mid-session, so the browser must be able
+      // to obtain a WebGPU adapter even though the viewer starts on WebGL2.
+      // Without the capability flags a GPU-less host cannot satisfy the second
+      // leg and the verb fails closed on every effect.
+      const session = new BrowserSession({ backend: 'webgl2', webgpuCapable: true })
       try {
         await session.setup()
         const results = []
