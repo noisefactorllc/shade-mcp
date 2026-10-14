@@ -5,11 +5,13 @@ If no example shows parameters for an effect, use that effect with NO parameters
 
 ### SYNTH (Generators) - Start chains, create images from nothing
 noise, fractal, julia, mandelbrot, newton, cell, perlin, curl, gabor, gradient,
-media, mnca, modPattern, osc2d, pattern, polygon, rd, roll, ca, scope, shape,
+media, mnca, modPattern, osc2d, pattern, polygon, reactionDiffusion, roll,
+cellularAutomata, scope, shape,
 solid, spectrum, subdivide, testPattern
 
 ### SYNTH3D (3D Volume Generators) - Use with render3d()
-noise3d, fractal3d, cell3d, flythrough3d, shape3d, rd3d, ca3d
+noise3d, fractal3d, cell3d, flythrough3d, shape3d, reactionDiffusion3d,
+cellularAutomata3d
 
 ### FILTER (Processors) - Chain after generators
 adjust, bloom, blur, bulge, celShading, cf, channel, chroma, chromaticAberration,
@@ -38,13 +40,10 @@ blendMode, alphaMask, applyMode, cellSplit, centerMask, distortion, focusBlur,
 patternMix, shadow, shapeMask, split, thresholdMix, uvRemap
 
 ### CLASSIC EFFECTS (classicNoisedeck namespace)
-background, bitEffects, caustic, cellNoise, cellRefract, coalesce, colorLab,
-composite, depthOfField, displaceMixer, effects, fractal, glitch, kaleido,
-lensDistortion, moodscape, noise, noise3d, palette, pattern, quadTap, refract,
-shapeMixer, shapes, shapes3d, splat, tunnel, warp
-
-### CLASSIC EFFECTS (classicNoisemaker namespace)
-kaleido, refract
+bitEffects, caustic, cellNoise, cellRefract, coalesce, colorLab,
+composite, effects, fractal, glitch, kaleido,
+lensDistortion, moodscape, noise, noise3d, refract,
+shapeMixer, shapes, shapes3d, splat
 
 ### Parameter Examples (REAL, VERIFIED from working programs)
 \`\`\`
@@ -52,7 +51,7 @@ noise(type: 10, octaves: 2, xScale: 75, yScale: 75, ridges: true, colorMode: 6, 
 shapes(speedA: 50, loopAOffset: 60, loopAScale: 21, speedB: 42, loopBOffset: 120, loopBScale: 54, palette: netOfGems, wrap: true)
 cellNoise(scale: 75, cellScale: 87, smooth: 11, variation: 50, colorMode: 0, palette: royal)
 fractal(type: 0, zoomAmt: 0, rotation: 0, speed: 30, offsetX: 70, offsetY: 50, iterations: 50, colorMode: 4, palette: dealerHat)
-pattern(type: 1, scale: 80, rotation: 0, lineWidth: 100, animation: 0, speed: 1, color1: #ffea31, color2: #000000)
+pattern(type: 2, scale: 16, rotation: 0, thickness: 1, animation: 0, speed: 1, fgColor: #ffea31, bgColor: #000000)
 solid(color: #000)
 polygon(radius: 0.7, fgAlpha: 0.1, bgAlpha: 0)
 text(text: "hello", font: "Audiowide", size: 0.09, posX: 0.375, color: #ffffff)

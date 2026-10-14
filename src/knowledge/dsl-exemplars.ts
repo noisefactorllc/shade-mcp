@@ -103,10 +103,10 @@ export const DSL_EXEMPLAR_PROGRAMS: ExemplarProgram[] = [
   // ── Basics (all 8) ──────────────────────────────────────────────────────
 
   {
-    name: 'background',
-    dsl: 'search classicNoisedeck\n\nbackground(backgroundType: 10, rotation: 0, opacity: 100, color1: #000000, color2: #ffffff).write(o0)\nrender(o0)',
-    tags: ['classic', 'basics', 'background', 'simple'],
-    description: 'Simple background generator with two-color gradient',
+    name: 'two-color gradient',
+    dsl: 'search synth\n\ngradient(type: radial, rotation: 0, color1: #000000, color2: #ffffff).write(o0)\nrender(o0)',
+    tags: ['synth', 'gradient', 'basics', 'simple'],
+    description: 'Two-color radial gradient background',
   },
   {
     name: 'bit effects',
@@ -140,7 +140,7 @@ export const DSL_EXEMPLAR_PROGRAMS: ExemplarProgram[] = [
   },
   {
     name: 'pattern',
-    dsl: 'search classicNoisedeck\n\npattern(type: 1, scale: 80, skewAmt: 0, rotation: 0, lineWidth: 100, animation: 0, speed: 1, sharpness: 100, color1: #ffea31, color2: #000000).write(o0)\nrender(o0)',
+    dsl: 'search classicNoisedeck, synth\n\npattern(type: 2, scale: 16, skew: 0, rotation: 0, thickness: 1, animation: 0, speed: 1, smoothness: 1, fgColor: #ffea31, bgColor: #000000).write(o0)\nrender(o0)',
     tags: ['classic', 'basics', 'pattern', 'simple', 'geometric'],
     description: 'Dot pattern generator with yellow-black color scheme',
   },
@@ -155,7 +155,7 @@ export const DSL_EXEMPLAR_PROGRAMS: ExemplarProgram[] = [
 
   {
     name: '1980s shmoos',
-    dsl: 'search classicNoisedeck\n\nshapes(speedA: -32, loopAOffset: 200, loopAScale: 69, speedB: -19, loopBOffset: 330, loopBScale: 47, palette: netOfGems, wrap: true, cyclePalette: 0, rotatePalette: 0).write(o0)\nshapes(speedA: 32, loopAOffset: 200, loopAScale: 86, speedB: -24, loopBOffset: 210, loopBScale: 18, palette: seventiesShirt, wrap: true, cyclePalette: 0, rotatePalette: 0).coalesce(tex: read(o0), blendMode: 6, mix: 2, refractAAmt: 0, refractBAmt: 0).colorLab(colorMode: 2, dither: 0, hueRange: 100, hueRotation: 0, levels: 2, palette: seventiesShirt).palette(ampB: 43, ampG: 35, ampR: 91, freq: 4, offsetB: 17, offsetG: 66, offsetR: 90, phaseB: 100, phaseG: 33, phaseR: 58, paletteType: 0).write(o1)\nrender(o1)',
+    dsl: 'search classicNoisedeck\n\nshapes(speedA: -32, loopAOffset: 200, loopAScale: 69, speedB: -19, loopBOffset: 330, loopBScale: 47, palette: netOfGems, wrap: true, cyclePalette: 0, rotatePalette: 0).write(o0)\nshapes(speedA: 32, loopAOffset: 200, loopAScale: 86, speedB: -24, loopBOffset: 210, loopBScale: 18, palette: seventiesShirt, wrap: true, cyclePalette: 0, rotatePalette: 0).coalesce(tex: read(o0), blendMode: 6, mix: 2, refractAAmt: 0, refractBAmt: 0).colorLab(colorMode: 2, dither: 0, hueRange: 100, hueRotation: 0, levels: 2, palette: seventiesShirt).write(o1)\nrender(o1)',
     tags: ['classic', 'multi-chain', 'shapes', 'coalesce', 'colorLab', 'palette'],
     description: 'Two shapes generators blended with coalesce, posterized with colorLab and custom palette remap',
   },
@@ -215,25 +215,25 @@ export const DSL_EXEMPLAR_PROGRAMS: ExemplarProgram[] = [
   },
   {
     name: 'cool crystals',
-    dsl: 'search classicNoisedeck\n\ncellNoise(colorMode: 1, speed: 20, palette: santaCruz, scale: 90, cellScale: 75, smooth: 0, variation: 0, cyclePalette: 1, rotatePalette: 0).write(o0)\ncellNoise(colorMode: 2, speed: 20, palette: tungsten, scale: 90, cellScale: 75, smooth: 0, variation: 0, cyclePalette: 1, rotatePalette: 0).coalesce(tex: read(o0), blendMode: 7, mix: -61, refractAAmt: 46, refractBAmt: 25).lensDistortion(aberration: 30, distortion: -40, speed: 10, loopScale: 71, alpha: 61, shape: 0, tint: #4052ba, vignetteAmt: -100).lensDistortion(aberration: 100, blendMode: 0, hueRange: 39, hueRotation: 16, blendMode: 1, modulate: true, passthru: 60, alpha: 0, speed: 0, distortion: 0).write(o1)\nrender(o1)',
+    dsl: 'search classicNoisedeck\n\ncellNoise(colorMode: 1, speed: 5, palette: santaCruz, scale: 90, cellScale: 75, smooth: 0, variation: 0, cyclePalette: 1, rotatePalette: 0).write(o0)\ncellNoise(colorMode: 2, speed: 5, palette: tungsten, scale: 90, cellScale: 75, smooth: 0, variation: 0, cyclePalette: 1, rotatePalette: 0).coalesce(tex: read(o0), blendMode: 7, mix: -61, refractAAmt: 46, refractBAmt: 25).lensDistortion(aberration: 30, distortion: -40, speed: 10, loopScale: 71, alpha: 61, shape: 0, tint: #4052ba, vignetteAmt: -100).lensDistortion(aberration: 100, blendMode: 0, hueRange: 39, hueRotation: 16, blendMode: 1, modulate: true, passthru: 60, alpha: 0, speed: 0, distortion: 0).write(o1)\nrender(o1)',
     tags: ['classic', 'multi-chain', 'cellNoise', 'coalesce', 'lens', 'dual-lens', 'vignette'],
     description: 'Two cell noise layers with different palettes coalesced with refraction, dual lens distortion and blue vignette',
   },
   {
     name: 'cutout hearts',
-    dsl: 'search classicNoisedeck\n\npattern(color1: #000000, color2: #ff00f7, rotation: 25, scale: 97, skewAmt: 2, type: 3, speed: 1, animation: 0).write(o0)\nnoise(hueRange: 24, hueRotation: 60, speed: 18, refractAmt: 77, ridges: false, wrap: true, xScale: 93, yScale: 67, type: 3, colorMode: 6, kaleido: 1, octaves: 1).composite(tex: read(o0), blendMode: 1, inputColor: #000000, mix: 0, range: 80).palette(ampB: 47, ampG: 2, ampR: 79, freq: 2, offsetB: 89, offsetG: 44, offsetR: 72, phaseB: 43, phaseG: 59, phaseR: 29, paletteType: 0).lensDistortion(aberration: 73, blendMode: 0, hueRange: 0, hueRotation: 77, blendMode: 1, modulate: false, passthru: 50, alpha: 0, speed: 0, distortion: 0).write(o1)\nrender(o1)',
+    dsl: 'search classicNoisedeck, synth\n\npattern(fgColor: #000000, bgColor: #ff00f7, rotation: 25, scale: 19, skew: 2, type: 9, speed: 1, animation: 0).write(o0)\nnoise(hueRange: 24, hueRotation: 60, speed: 18, refractAmt: 77, ridges: false, wrap: true, xScale: 93, yScale: 67, type: 3, colorMode: 6, kaleido: 1, octaves: 1).composite(tex: read(o0), blendMode: 1, inputColor: #000000, mix: 0, range: 80).lensDistortion(aberration: 73, blendMode: 0, hueRange: 0, hueRotation: 77, blendMode: 1, modulate: false, passthru: 50, alpha: 0, speed: 0, distortion: 0).write(o1)\nrender(o1)',
     tags: ['classic', 'multi-chain', 'pattern', 'noise', 'composite', 'palette', 'lens'],
     description: 'Heart pattern composited with refracted noise, custom RGB palette remap and chromatic aberration',
   },
   {
     name: 'cyber soup',
-    dsl: 'search classicNoisedeck\n\npattern(color1: #4a88fb, color2: #000000, rotation: 111, scale: 61, skewAmt: 0, type: 2, speed: 1, animation: 4).write(o0)\nnoise(hueRange: 20, hueRotation: 58, speed: 78, loopOffset: 300, loopScale: 100, refractAmt: 68, wrap: true, type: 3, colorMode: 6, kaleido: 1, xScale: 81, yScale: 81, octaves: 1).composite(tex: read(o0), blendMode: 2, inputColor: #000000, mix: 4, range: 71).colorLab(colorMode: 2, dither: 0, hueRange: 154, hueRotation: 0, levels: 0, palette: eventHorizon).write(o1)\nrender(o1)',
+    dsl: 'search classicNoisedeck, synth\n\npattern(fgColor: #4a88fb, bgColor: #000000, rotation: 111, scale: 12, skew: 0, type: 3, speed: 1, animation: 0).write(o0)\nnoise(hueRange: 20, hueRotation: 58, speed: 78, loopOffset: 300, loopScale: 100, refractAmt: 68, wrap: true, type: 3, colorMode: 6, kaleido: 1, xScale: 81, yScale: 81, octaves: 1).composite(tex: read(o0), blendMode: 2, inputColor: #000000, mix: 4, range: 71).colorLab(colorMode: 2, dither: 0, hueRange: 154, hueRotation: 0, levels: 0, palette: eventHorizon).write(o1)\nrender(o1)',
     tags: ['classic', 'multi-chain', 'pattern', 'noise', 'composite', 'colorLab'],
     description: 'Grid pattern composited with refracted noise, remapped through eventHorizon palette',
   },
   {
     name: 'double chess',
-    dsl: 'search classicNoisedeck\n\npattern(color1: #6272e7, color2: #f98a35, rotation: 45, scale: 96, skewAmt: 0, type: 0, speed: 1, animation: 2).write(o0)\npattern(color1: #da8b56, color2: #520e28, rotation: 180, scale: 86, skewAmt: 0, type: 0, speed: 1, animation: 2).coalesce(tex: read(o0), blendMode: 8, mix: -52).write(o1)\nrender(o1)',
+    dsl: 'search classicNoisedeck, synth\n\npattern(fgColor: #6272e7, bgColor: #f98a35, rotation: 45, scale: 19, skew: 0, type: 0, speed: 1, animation: 2).write(o0)\npattern(fgColor: #da8b56, bgColor: #520e28, rotation: 180, scale: 17, skew: 0, type: 0, speed: 1, animation: 2).coalesce(tex: read(o0), blendMode: 8, mix: -52).write(o1)\nrender(o1)',
     tags: ['classic', 'multi-chain', 'pattern', 'coalesce', 'mixer'],
     description: 'Two animated checkerboard patterns at different rotations blended together',
   },
@@ -245,7 +245,7 @@ export const DSL_EXEMPLAR_PROGRAMS: ExemplarProgram[] = [
   },
   {
     name: 'dramatic pattern',
-    dsl: 'search classicNoisedeck\n\npattern(color1: #ffffff, color2: #000000, rotation: 142, scale: 98, skewAmt: 12, type: 8, speed: 1, animation: 0).write(o0)\ncellNoise(speed: 7, palette: brushedMetal, scale: 79, cellScale: 75, smooth: 50, variation: 0, cyclePalette: 0, rotatePalette: 0).coalesce(tex: read(o0), blendMode: 13, mix: 60, refractAAmt: 1, refractBAmt: 100).lensDistortion(aberration: 27, distortion: -31, speed: -59, loopScale: 60, alpha: 34, shape: 0, tint: #5849bc, vignetteAmt: -37).write(o1)\nrender(o1)',
+    dsl: 'search classicNoisedeck, synth\n\npattern(fgColor: #ffffff, bgColor: #000000, rotation: 142, scale: 20, skew: 0.24, type: 8, speed: 1, animation: 0).write(o0)\ncellNoise(speed: 4, palette: brushedMetal, scale: 79, cellScale: 75, smooth: 50, variation: 0, cyclePalette: 0, rotatePalette: 0).coalesce(tex: read(o0), blendMode: 13, mix: 60, refractAAmt: 1, refractBAmt: 100).lensDistortion(aberration: 27, distortion: -31, speed: -59, loopScale: 60, alpha: 34, shape: 0, tint: #5849bc, vignetteAmt: -37).write(o1)\nrender(o1)',
     tags: ['classic', 'multi-chain', 'pattern', 'cellNoise', 'coalesce', 'lens', 'refraction'],
     description: 'Skewed geometric pattern blended with cell noise using heavy refraction and purple vignette',
   },
@@ -269,7 +269,7 @@ export const DSL_EXEMPLAR_PROGRAMS: ExemplarProgram[] = [
   },
   {
     name: 'glitched grid',
-    dsl: 'search classicNoisedeck\n\nnoise(hueRange: 0, hueRotation: 45, speed: 79, refractAmt: 100, ridges: false, wrap: true, xScale: 100, yScale: 99, type: 3, colorMode: 6, kaleido: 1, octaves: 1).write(o0)\npattern(color1: #8480ff, color2: #000000, rotation: 104, scale: 71, skewAmt: 1, type: 2, speed: 1, animation: 4).coalesce(tex: read(o0), blendMode: 17, mix: 100, refractAAmt: 0, refractBAmt: 100).lensDistortion(aberration: 22, distortion: 56, speed: -20, loopScale: 60, alpha: 4, shape: 6, tint: #494abc, vignetteAmt: -69).write(o1)\nrender(o1)',
+    dsl: 'search classicNoisedeck, synth\n\nnoise(hueRange: 0, hueRotation: 45, speed: 79, refractAmt: 100, ridges: false, wrap: true, xScale: 100, yScale: 99, type: 3, colorMode: 6, kaleido: 1, octaves: 1).write(o0)\npattern(fgColor: #8480ff, bgColor: #000000, rotation: 104, scale: 14, skew: 1, type: 3, speed: 1, animation: 0).coalesce(tex: read(o0), blendMode: 17, mix: 100, refractAAmt: 0, refractBAmt: 100).lensDistortion(aberration: 22, distortion: 56, speed: -20, loopScale: 60, alpha: 4, shape: 6, tint: #494abc, vignetteAmt: -69).write(o1)\nrender(o1)',
     tags: ['classic', 'multi-chain', 'noise', 'pattern', 'coalesce', 'lens', 'refraction'],
     description: 'Refracted noise blended with animated grid pattern, pincushion distortion and purple vignette',
   },
@@ -287,13 +287,13 @@ export const DSL_EXEMPLAR_PROGRAMS: ExemplarProgram[] = [
   },
   {
     name: 'hallucinogrid',
-    dsl: 'search classicNoisedeck\n\npattern(color1: #00ffd5, color2: #000000, rotation: 130, scale: 75, skewAmt: 0, type: 2, speed: 1, animation: 4).write(o0)\nnoise(hueRange: 21, hueRotation: 43, speed: 100, refractAmt: 100, ridges: true, wrap: true, xScale: 99, yScale: 97, type: 3, colorMode: 6, kaleido: 1, octaves: 1).coalesce(tex: read(o0), blendMode: 9, mix: -56, refractAAmt: 27, refractBAmt: 29).lensDistortion(aberration: 100, distortion: -64, speed: -10, loopScale: 62, alpha: 11, shape: 0, tint: #75c5c7, vignetteAmt: -100).write(o1)\nrender(o1)',
+    dsl: 'search classicNoisedeck, synth\n\npattern(fgColor: #00ffd5, bgColor: #000000, rotation: 130, scale: 15, skew: 0, type: 3, speed: 1, animation: 0).write(o0)\nnoise(hueRange: 21, hueRotation: 43, speed: 100, refractAmt: 100, ridges: true, wrap: true, xScale: 99, yScale: 97, type: 3, colorMode: 6, kaleido: 1, octaves: 1).coalesce(tex: read(o0), blendMode: 9, mix: -56, refractAAmt: 27, refractBAmt: 29).lensDistortion(aberration: 100, distortion: -64, speed: -10, loopScale: 62, alpha: 11, shape: 0, tint: #75c5c7, vignetteAmt: -100).write(o1)\nrender(o1)',
     tags: ['classic', 'multi-chain', 'pattern', 'noise', 'coalesce', 'lens', 'chromatic-aberration', 'vignette'],
     description: 'Cyan animated grid blended with ridged refracted noise, full chromatic aberration and barrel distortion',
   },
   {
     name: 'holo-transmission',
-    dsl: 'search classicNoisedeck\n\nnoise(hueRange: 9, hueRotation: 15, speed: 73, loopOffset: 300, loopScale: 29, refractAmt: 71, wrap: true, type: 3, colorMode: 6, kaleido: 1, xScale: 74, yScale: 74, octaves: 1).write(o0)\nbitEffects(colorScheme: 5, formula: 0, interp: 0, speed: 34, n: 1, rotation: 0, scale: 88).glitch(aberration: 14).effects(effectAmt: 84, effect: 0).write(o1)\nrender(o1)',
+    dsl: 'search classicNoisedeck\n\nnoise(hueRange: 9, hueRotation: 15, speed: 73, loopOffset: 300, loopScale: 29, refractAmt: 71, wrap: true, type: 3, colorMode: 6, kaleido: 1, xScale: 74, yScale: 74, octaves: 1).write(o0)\nbitEffects(colorScheme: 5, formula: 0, interp: 0, speed: 34, n: 1, rotation: 0, scale: 88).glitch(aberration: 14).effects(effectAmt: 17, effect: 0).write(o1)\nrender(o1)',
     tags: ['classic', 'multi-chain', 'noise', 'bitEffects', 'glitch', 'effects'],
     description: 'Noise and bit effects on separate chains with glitch filter and zoom effects',
   },
@@ -329,7 +329,7 @@ export const DSL_EXEMPLAR_PROGRAMS: ExemplarProgram[] = [
   },
   {
     name: 'liquid ice',
-    dsl: 'search classicNoisedeck\n\ncellNoise(colorMode: 1, speed: 19, palette: jester, scale: 88, cellScale: 75, smooth: 50, variation: 0, cyclePalette: 1, rotatePalette: 0).write(o0)\ncellNoise(colorMode: 2, speed: 8, palette: neptune, scale: 92, cellScale: 75, smooth: 0, variation: 0, cyclePalette: 1, rotatePalette: 0).coalesce(tex: read(o0), blendMode: 0, mix: -50, refractAAmt: 61, refractBAmt: 34).lensDistortion(aberration: 30, distortion: -32, speed: 15, loopScale: 73, alpha: 59, shape: 0, tint: #5e9e96, vignetteAmt: -100).refract().write(o1)\nrender(o1)',
+    dsl: 'search classicNoisedeck\n\ncellNoise(colorMode: 1, speed: 4, palette: jester, scale: 88, cellScale: 75, smooth: 50, variation: 0, cyclePalette: 1, rotatePalette: 0).write(o0)\ncellNoise(colorMode: 2, speed: 4, palette: neptune, scale: 92, cellScale: 75, smooth: 0, variation: 0, cyclePalette: 1, rotatePalette: 0).coalesce(tex: read(o0), blendMode: 0, mix: -50, refractAAmt: 61, refractBAmt: 34).lensDistortion(aberration: 30, distortion: -32, speed: 15, loopScale: 73, alpha: 59, shape: 0, tint: #5e9e96, vignetteAmt: -100).refract().write(o1)\nrender(o1)',
     tags: ['classic', 'multi-chain', 'cellNoise', 'coalesce', 'lens', 'refraction', 'vignette'],
     description: 'Two cell noise generators with jester and neptune palettes, refraction blend with teal vignette',
   },
@@ -341,7 +341,7 @@ export const DSL_EXEMPLAR_PROGRAMS: ExemplarProgram[] = [
   },
   {
     name: 'maelstrom',
-    dsl: 'search classicNoisedeck\n\nfractal(centerX: 0, centerY: 0, type: 0, offsetX: 40, offsetY: 58, palette: grayscale, rotation: 183, speed: 33, zoomAmt: 0, cyclePalette: 0, rotatePalette: 0).write(o0)\nnoise(hueRange: 26, hueRotation: 81, speed: 100, refractAmt: 73, ridges: true, wrap: true, xScale: 95, yScale: 96, type: 3, colorMode: 6, kaleido: 1, octaves: 1).coalesce(tex: read(o0), blendMode: 10, mix: 100, refractAAmt: 0, refractBAmt: 51).lensDistortion(aberration: 41, distortion: 23, speed: 48, loopScale: 24, alpha: 14, shape: 0, tint: #935343, vignetteAmt: -47).write(o1)\nrender(o1)',
+    dsl: 'search classicNoisedeck\n\nfractal(centerX: 0, centerY: 0, type: 0, offsetX: 40, offsetY: 58, palette: grayscale, rotation: 180, speed: 33, zoomAmt: 0, cyclePalette: 0, rotatePalette: 0).write(o0)\nnoise(hueRange: 26, hueRotation: 81, speed: 100, refractAmt: 73, ridges: true, wrap: true, xScale: 95, yScale: 96, type: 3, colorMode: 6, kaleido: 1, octaves: 1).coalesce(tex: read(o0), blendMode: 10, mix: 100, refractAAmt: 0, refractBAmt: 51).lensDistortion(aberration: 41, distortion: 23, speed: 48, loopScale: 24, alpha: 14, shape: 0, tint: #935343, vignetteAmt: -47).write(o1)\nrender(o1)',
     tags: ['classic', 'multi-chain', 'fractal', 'noise', 'coalesce', 'lens'],
     description: 'Grayscale Mandelbrot fractal blended with ridged refracted noise, warm-tinted lens distortion',
   },
@@ -365,7 +365,7 @@ export const DSL_EXEMPLAR_PROGRAMS: ExemplarProgram[] = [
   },
   {
     name: 'prismatic goop',
-    dsl: 'search classicNoisedeck\n\npattern(color1: #ffffff, color2: #000000, rotation: 0, scale: 95, skewAmt: 8, type: 0, speed: 1, animation: 2).write(o0)\nnoise(hueRange: 25, hueRotation: 52, speed: 53, refractAmt: 76, ridges: true, wrap: true, xScale: 95, yScale: 82, type: 3, colorMode: 6, kaleido: 1, octaves: 1).coalesce(tex: read(o0), blendMode: 10, mix: 43, refractAAmt: 10, refractBAmt: 0).lensDistortion(aberration: 100, blendMode: 0, hueRange: 71, hueRotation: 0, blendMode: 1, modulate: true, passthru: 47, alpha: 0, speed: 0, distortion: 0).effects(effect: 4, effectAmt: 0, flip: 2, offsetX: 0, offsetY: 0, rotation: 59, scaleAmt: 146).write(o1)\nrender(o1)',
+    dsl: 'search classicNoisedeck, synth\n\npattern(fgColor: #ffffff, bgColor: #000000, rotation: 0, scale: 19, skew: 0.16, type: 0, speed: 1, animation: 2).write(o0)\nnoise(hueRange: 25, hueRotation: 52, speed: 53, refractAmt: 76, ridges: true, wrap: true, xScale: 95, yScale: 82, type: 3, colorMode: 6, kaleido: 1, octaves: 1).coalesce(tex: read(o0), blendMode: 10, mix: 43, refractAAmt: 10, refractBAmt: 0).lensDistortion(aberration: 100, blendMode: 0, hueRange: 71, hueRotation: 0, blendMode: 1, modulate: true, passthru: 47, alpha: 0, speed: 0, distortion: 0).effects(effect: 4, effectAmt: 0, flip: 2, offsetX: 0, offsetY: 0, rotation: 59, scaleAmt: 146).write(o1)\nrender(o1)',
     tags: ['classic', 'multi-chain', 'pattern', 'noise', 'coalesce', 'lens', 'effects', 'chromatic-aberration'],
     description: 'Animated checkerboard coalesced with refracted noise, full chromatic aberration and rotated mirror',
   },
@@ -458,9 +458,9 @@ export const DSL_EXEMPLAR_PROGRAMS: ExemplarProgram[] = [
   },
   {
     name: 'fractal explorer',
-    dsl: 'search synth\n\nfractal(type: burningShip, power: 2, iterations: 200, zoom: 1.5).write(o0)\nrender(o0)',
-    tags: ['synth', 'fractal', 'burningShip', 'explorer'],
-    description: 'Burning ship fractal variant',
+    dsl: 'search classicNoisedeck\n\nfractal(type: mandelbrot, iterations: 50, zoomAmt: 1.5).write(o0)\nrender(o0)',
+    tags: ['synth', 'fractal', 'mandelbrot', 'explorer'],
+    description: 'Mandelbrot fractal with deep iteration zoom',
   },
   {
     name: 'gabor texture',
@@ -470,7 +470,7 @@ export const DSL_EXEMPLAR_PROGRAMS: ExemplarProgram[] = [
   },
   {
     name: 'color gradient',
-    dsl: 'search synth\n\ngradient(gradientType: radial, color1: #ff0044, color2: #4400ff, color3: #00ff88, color4: #ffaa00).write(o0)\nrender(o0)',
+    dsl: 'search synth\n\ngradient(type: radial, color1: #ff0044, color2: #4400ff, color3: #00ff88, color4: #ffaa00).write(o0)\nrender(o0)',
     tags: ['synth', 'gradient', 'color', 'simple'],
     description: 'Radial four-color gradient generator',
   },
@@ -488,45 +488,45 @@ export const DSL_EXEMPLAR_PROGRAMS: ExemplarProgram[] = [
   },
   {
     name: 'shape morphing',
-    dsl: 'search synth\n\nshape(loopAOffset: dodecahedron, loopBOffset: icosahedron, loopAScale: 50, loopBScale: 30, wrap: true).write(o0)\nrender(o0)',
-    tags: ['synth', 'shape', 'morphing', 'lissajous'],
-    description: 'Animated shape morph between dodecahedron and icosahedron projections',
+    dsl: 'search classicNoisedeck\n\nshapes(loopAOffset: hexagon, loopBOffset: triangle, loopAScale: 50, loopBScale: 30, wrap: true).write(o0)\nrender(o0)',
+    tags: ['classicNoisedeck', 'shapes', 'morphing', 'lissajous'],
+    description: 'Animated shape morph between hexagon and triangle offset fields',
   },
   {
     name: 'reaction diffusion',
-    dsl: 'search synth\n\nrd(iterations: 16, colorMode: gradient).write(o0)\nrender(o0)',
-    tags: ['synth', 'rd', 'reaction-diffusion', 'simulation'],
-    description: 'Reaction-diffusion simulation with gradient coloring',
+    dsl: 'search synth\n\nreactionDiffusion(iterations: 16).write(o0)\nrender(o0)',
+    tags: ['synth', 'reaction-diffusion', 'simulation'],
+    description: 'Reaction-diffusion simulation with default coloring',
   },
   {
     name: 'cellular automaton',
-    dsl: 'search synth\n\nca(ruleIndex: 4, stateSize: x64, speed: 2).write(o0)\nrender(o0)',
-    tags: ['synth', 'ca', 'cellular-automata', 'simulation'],
+    dsl: 'search synth\n\ncellularAutomata(ruleIndex: 4, speed: 2).write(o0)\nrender(o0)',
+    tags: ['synth', 'cellularAutomata', 'cellular-automata', 'simulation'],
     description: '2D cellular automaton with larger state buffer',
   },
   {
     name: 'multi-neighborhood ca',
-    dsl: 'search synth\n\nmnca(ruleIndex: 4, stateSize: x16, speed: 2).write(o0)\nrender(o0)',
+    dsl: 'search synth\n\nmnca(speed: 2).write(o0)\nrender(o0)',
     tags: ['synth', 'mnca', 'cellular-automata', 'simulation'],
     description: 'Multi-neighborhood cellular automaton — complex emergent patterns',
   },
   {
     name: 'mod pattern grid',
-    dsl: 'search synth\n\nmodPattern(shape1: circle, scale1: 12, shape2: square, scale2: 8, blend: 0.5, speed: 1).write(o0)\nrender(o0)',
+    dsl: 'search synth\n\nmodPattern(shape1: plus, scale1: 12, shape2: square, scale2: 8, blend: 0.5, speed: 1).write(o0)\nrender(o0)',
     tags: ['synth', 'modPattern', 'geometric', 'pattern'],
     description: 'Modular arithmetic pattern with blended circle and square grids',
   },
   {
     name: 'pattern stripes',
-    dsl: 'search synth\n\npattern(type: stripes, scale: 80, rotation: 45, smoothness: 0.05, speed: 1).write(o0)\nrender(o0)',
+    dsl: 'search synth\n\npattern(type: stripes, scale: 16, rotation: 45, smoothness: 0.05, speed: 1).write(o0)\nrender(o0)',
     tags: ['synth', 'pattern', 'geometric', 'stripes'],
     description: 'Angled stripe pattern with smooth edges',
   },
   {
     name: 'subdivide tiles',
-    dsl: 'search synth\n\nsubdivide(depth: 6, density: 80, fill: quad, outline: 2).write(o0)\nrender(o0)',
+    dsl: 'search synth\n\nsubdivide(depth: 6, density: 80, fill: circle, outline: 2).write(o0)\nrender(o0)',
     tags: ['synth', 'subdivide', 'geometric', 'tiling'],
-    description: 'Recursive subdivision tiling with outlined quads',
+    description: 'Recursive subdivision tiling with outlined circle fill',
   },
   {
     name: 'solid color',
@@ -1073,14 +1073,14 @@ export const DSL_EXEMPLAR_PROGRAMS: ExemplarProgram[] = [
   },
   {
     name: '3d cellular automata',
-    dsl: 'search synth3d, filter3d, render\n\nca3d(ruleIndex: diamoeba, volumeSize: x32)\n  .render3d()\n  .write(o0)\nrender(o0)',
-    tags: ['3d', 'ca3d', 'cellular-automata', 'simulation'],
+    dsl: 'search synth3d, filter3d, render\n\ncellularAutomata3d(ruleIndex: diamoeba, volumeSize: x32)\n  .render3d()\n  .write(o0)\nrender(o0)',
+    tags: ['3d', 'cellularAutomata3d', 'cellular-automata', 'simulation'],
     description: '3D diamoeba cellular automaton rendered as volume',
   },
   {
     name: '3d reaction diffusion',
-    dsl: 'search synth3d, filter3d, render\n\nrd3d(volumeSize: x32, iterations: 16, colorMode: gradient)\n  .render3d()\n  .write(o0)\nrender(o0)',
-    tags: ['3d', 'rd3d', 'reaction-diffusion', 'simulation'],
+    dsl: 'search synth3d, filter3d, render\n\nreactionDiffusion3d(volumeSize: x32, iterations: 16, colorMode: gradient)\n  .render3d()\n  .write(o0)\nrender(o0)',
+    tags: ['3d', 'reactionDiffusion3d', 'reaction-diffusion', 'simulation'],
     description: '3D reaction-diffusion with gradient coloring',
   },
   {
@@ -1112,7 +1112,7 @@ export const DSL_EXEMPLAR_PROGRAMS: ExemplarProgram[] = [
   },
   {
     name: 'distorted shapes',
-    dsl: 'search synth, mixer\n\nshape(loopAOffset: icosahedron, loopBOffset: torus, wrap: true)\n  .write(o0)\n\nnoise(ridges: true)\n  .distortion(tex: read(o0), mode: refract, intensity: 70)\n  .write(o1)\nrender(o1)',
+    dsl: 'search classicNoisedeck, mixer, filter\n\nshapes(loopAOffset: octagon, loopBOffset: rings, wrap: true)\n  .write(o0)\n\nnoise(ridges: true)\n  .distortion(tex: read(o0), mode: refract, intensity: 70)\n  .write(o1)\nrender(o1)',
     tags: ['combined', 'mixer', 'distortion', 'shape', 'refract'],
     description: 'Noise refracted through shape morph displacement',
   },
