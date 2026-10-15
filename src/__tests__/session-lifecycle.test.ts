@@ -114,7 +114,7 @@ describe('browser session lifecycle', () => {
     const args = vi.mocked(chromium.launch).mock.calls.at(-1)?.[0]?.args ?? []
     expect(args).toContain('--enable-unsafe-webgpu')
     expect(args).toContain('--enable-features=Vulkan')
-    expect(args).toContain('--use-angle=vulkan')
+    expect(args).toContain(process.platform === 'darwin' ? '--use-angle=metal' : '--use-angle=vulkan')
     // The capability flags decide what the BROWSER can reach; the session
     // backend still reports what the viewer renders first.
     expect(session.backend).toBe('webgl2')
