@@ -215,8 +215,8 @@ export async function acquireServer(
     return server
   }
 
-  // Restricted runners (supervisor verification sandboxes, the macOS host
-  // broker) refuse an ephemeral listen(0) on loopback with EPERM while
+  // Restricted runners (automated review verification sandboxes, the macOS
+  // GPU host) refuse an ephemeral listen(0) on loopback with EPERM while
   // permitting explicit fixed ports. Bind through a candidate chain instead of
   // failing the whole acquisition: an NM_TS_PORT override first, then the
   // requested port, then a small fixed range — each attempt on a fresh server
