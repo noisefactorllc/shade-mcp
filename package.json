@@ -74,16 +74,16 @@
     "node": ">=22.0.0"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.133.0",
+    "@anthropic-ai/sdk": "^0.135.0",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "acorn": "^8.19.0",
-    "openai": "^7.32.0",
+    "openai": "^7.34.0",
     "playwright": "^1.64.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
-    "tsup": "^8.0.0",
+    "tsup": "^9.0.0",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3"
   },
