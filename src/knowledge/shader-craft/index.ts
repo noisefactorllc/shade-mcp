@@ -1,3 +1,4 @@
+import { SHADER_CRAFT_EXAMPLES } from './examples.js'
 import type { KnowledgeDocument } from '../vector-db.js'
 import { SHADER_CRAFT_WORKFLOW } from './workflow.js'
 import { SHADER_CRAFT_VIDEO_TO_EFFECT } from './video-to-effect.js'
@@ -251,6 +252,18 @@ export const SHADER_CRAFT_DOCUMENTS: KnowledgeDocument[] = [
       'motion'],
   ),
   ...LIBRARY_DOCUMENTS,
+  ...SHADER_CRAFT_EXAMPLES.map(example => doc(
+    `shader-craft-example-${example.id}`,
+    `Noisemaker example: ${example.name}`,
+    `${example.summary} Complete self-contained paired GLSL/WGSL effect: getShaderCraftExample('${example.id}'). ` +
+      `Returns a definition.js using Effect, shader files, minimal dependency closure and upstream/technique credits. ` +
+      `Uses normalized seamless time and a fixed seed; debug controls are not exposed. Function: user.${example.func}. ` +
+      `Copy package.files into shaders/effects/user/${example.func}/. For registerPortableEffect, combine package.definition ` +
+      `with shaders: { [package.example.func]: { glsl: package.shaders.glsl.source, wgsl: package.shaders.wgsl.source } }.`,
+    example.upstreamPath,
+    'see the included source credit block for the exact library technique closure',
+    ['example', 'template', example.id, ...example.summary.toLowerCase().split(/[^a-z]+/).filter(Boolean)],
+  )),
   doc(
     'shader-craft-video-to-effect',
     'Recreate a reference video as a Noisemaker effect',
@@ -261,3 +274,6 @@ export const SHADER_CRAFT_DOCUMENTS: KnowledgeDocument[] = [
       'setLoopDuration'],
   ),
 ]
+
+export { SHADER_CRAFT_EXAMPLES, getShaderCraftExample } from './examples.js'
+export type { ShaderCraftExample, ShaderCraftExampleDefinition, ShaderCraftExamplePackage } from './examples.js'

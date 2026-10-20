@@ -321,6 +321,105 @@
       "adaptedAs": [
         "SHADER_CRAFT_LICENSE"
       ]
+    },
+    {
+      "path": "skills/shader-art-coding/templates/alpine-valley.glsl",
+      "blob": "8f60a36e2170cefa8733a37f6970afa1c81eac7e",
+      "adaptedAs": [
+        "shader-craft-example-alpine-valley",
+        "SHADER_CRAFT_EXAMPLES",
+        "getShaderCraftExample"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/templates/coastal-water.glsl",
+      "blob": "4e4fa671ef2ea4ddbbb9dccb6e353862939ca552",
+      "adaptedAs": [
+        "shader-craft-example-coastal-water",
+        "SHADER_CRAFT_EXAMPLES",
+        "getShaderCraftExample"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/templates/noise-progression.glsl",
+      "blob": "b43ec0347dca47a9a289f62e2565184a3c101687",
+      "adaptedAs": [
+        "shader-craft-example-noise-progression",
+        "SHADER_CRAFT_EXAMPLES",
+        "getShaderCraftExample"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/templates/noise-terrain-map.glsl",
+      "blob": "b63820600f6118912252316cb99398f03205c54f",
+      "adaptedAs": [
+        "shader-craft-example-noise-terrain-map",
+        "SHADER_CRAFT_EXAMPLES",
+        "getShaderCraftExample"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/templates/ocean.glsl",
+      "blob": "e0bd15455ac258c9dfc528df4acc04edda8d6a9f",
+      "adaptedAs": [
+        "shader-craft-example-ocean",
+        "SHADER_CRAFT_EXAMPLES",
+        "getShaderCraftExample"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/templates/pattern-swatches.glsl",
+      "blob": "35c855637f6db0cc0dcb3bbea1713210b2448592",
+      "adaptedAs": [
+        "shader-craft-example-pattern-swatches",
+        "SHADER_CRAFT_EXAMPLES",
+        "getShaderCraftExample"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/templates/procedural-city.glsl",
+      "blob": "a1a67fabb6f3109112e693a498edab52289cd9d7",
+      "adaptedAs": [
+        "shader-craft-example-procedural-city",
+        "SHADER_CRAFT_EXAMPLES",
+        "getShaderCraftExample"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/templates/raymarch-sdf.glsl",
+      "blob": "474b14666be7b3c5606d94332e7d4c5dba691995",
+      "adaptedAs": [
+        "shader-craft-example-raymarch-sdf",
+        "SHADER_CRAFT_EXAMPLES",
+        "getShaderCraftExample"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/templates/sdf-2d-poster.glsl",
+      "blob": "bed4655f8a34f1a6a0b22ca864a4e470391c1b47",
+      "adaptedAs": [
+        "shader-craft-example-sdf-2d-poster",
+        "SHADER_CRAFT_EXAMPLES",
+        "getShaderCraftExample"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/templates/terrain.glsl",
+      "blob": "809587d7f5c14f0160a45cdd9bd7667e3559c77a",
+      "adaptedAs": [
+        "shader-craft-example-terrain",
+        "SHADER_CRAFT_EXAMPLES",
+        "getShaderCraftExample"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/templates/volumetric-clouds.glsl",
+      "blob": "1f0376e65a9615ecb400986dbd9e6c9773b3dbbd",
+      "adaptedAs": [
+        "shader-craft-example-volumetric-clouds",
+        "SHADER_CRAFT_EXAMPLES",
+        "getShaderCraftExample"
+      ]
     }
   ]
 }

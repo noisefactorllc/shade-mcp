@@ -121,7 +121,7 @@ describe('shader-craft documents', () => {
       expect(doc.tags?.length ?? 0, doc.id).toBeGreaterThan(0)
       expect(doc.source, doc.id).toContain('shader-skills')
       expect(doc.source, doc.id).toContain(COMMIT.slice(0, 7))
-      expect(doc.source, doc.id).toMatch(/(skills\/shader-art-coding|prompts)\/[\w/.-]+\.md/)
+      expect(doc.source, doc.id).toMatch(/(skills\/shader-art-coding|prompts)\/[\w/.-]+\.(?:md|glsl)/)
     }
   })
 
