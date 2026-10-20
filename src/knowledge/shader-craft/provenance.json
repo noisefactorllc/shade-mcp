@@ -1,0 +1,166 @@
+{
+  "name": "shader-craft",
+  "description": "Shader-craft knowledge for Noisemaker effects, adapted from the shader-art-coding skill. Compare each file blob with a newer upstream commit to find what changed, then bring the change into the adapted copy by hand.",
+  "upstream": {
+    "repository": "gokayfem/shader-skills",
+    "host": "github.com",
+    "commit": "e09bc993bf04201f26c03c87c89210e9b472f526",
+    "date": "2026-10-19T15:42:26Z",
+    "license": "MIT",
+    "copyright": "Copyright (c) 2026 gokayfem"
+  },
+  "adaptation": {
+    "target": "Noisemaker effects (definition plus GLSL and WGSL programs)",
+    "adapted": "2026-10-20"
+  },
+  "files": [
+    {
+      "path": "skills/shader-art-coding/SKILL.md",
+      "blob": "24914feb912c99350e78c9814756a2f52cd2a0b3",
+      "adaptedAs": [
+        "shader-craft-workflow",
+        "SHADER_CRAFT_WORKFLOW"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/references/composition-and-debugging.md",
+      "blob": "34fe7716b15da1c5b07ac7d0fc8e61c3b9082833",
+      "adaptedAs": [
+        "shader-craft-composition-and-debugging"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/references/formula-code-couples-materials.md",
+      "blob": "dd3080cc6b9e90dffc9450af8aef87fb74b2b0e9",
+      "adaptedAs": [
+        "shader-craft-formula-code-couples-materials"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/references/formula-code-couples-sdf.md",
+      "blob": "028391ce8678d48a2c16ddb9fa5f42a9f06e4125",
+      "adaptedAs": [
+        "shader-craft-formula-code-couples-sdf"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/references/formula-code-couples-terrain.md",
+      "blob": "f72c8a26f1e1b578993bcc0462dacbfa69af5a86",
+      "adaptedAs": [
+        "shader-craft-formula-code-couples-terrain"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/references/formula-cookbook.md",
+      "blob": "c880b921d1188389337974f1c1e983326d310567",
+      "adaptedAs": [
+        "shader-craft-formula-cookbook"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/references/library-index.md",
+      "blob": "f166a01c876c7dd9ae5927ecdfa2b738cd6932a6",
+      "adaptedAs": [
+        "shader-craft-library-index",
+        "shader-craft-library-common",
+        "shader-craft-library-hash",
+        "shader-craft-library-noise",
+        "shader-craft-library-pattern",
+        "shader-craft-library-sdf3d",
+        "shader-craft-library-sdf2d",
+        "shader-craft-library-operators",
+        "shader-craft-library-domain",
+        "shader-craft-library-architecture",
+        "shader-craft-library-raymarch",
+        "shader-craft-library-intersect",
+        "shader-craft-library-camera",
+        "shader-craft-library-shading",
+        "shader-craft-library-water",
+        "shader-craft-library-color",
+        "shader-craft-library-tonemap",
+        "shader-craft-library-volume",
+        "shader-craft-library-atmosphere",
+        "shader-craft-library-post",
+        "shader-craft-library-debug"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/references/noise-use-cases.md",
+      "blob": "3b213cada0c8e2ee157e70323036efbd9ed9304f",
+      "adaptedAs": [
+        "shader-craft-noise-use-cases"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/references/procedural-buildings.md",
+      "blob": "b36e89dc4433dbeab3d251b968d0ab2e2dcb7f6e",
+      "adaptedAs": [
+        "shader-craft-procedural-buildings"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/references/rendering-pipeline.md",
+      "blob": "7e2a07631553417e4088c383a00e8463a66fdf66",
+      "adaptedAs": [
+        "shader-craft-rendering-pipeline"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/references/sdf-library-guide.md",
+      "blob": "4550d3f2f37cb981acc751a1ebbe84a46d901720",
+      "adaptedAs": [
+        "shader-craft-sdf-library-guide"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/references/shader-workflow.md",
+      "blob": "ce048c5778a5b908fe13df197f0a7cda8020bb18",
+      "adaptedAs": [
+        "shader-craft-shader-workflow"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/references/subject-routing.md",
+      "blob": "de0aefcbd7d0ad0efd8fb2f91bbe02b596544911",
+      "adaptedAs": [
+        "shader-craft-subject-routing"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/references/terrain-production.md",
+      "blob": "cfcc7dd158bcc4abeb2f4123703c5d4b8b4dd476",
+      "adaptedAs": [
+        "shader-craft-terrain-production"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/references/water-quality.md",
+      "blob": "0322396e189e9c7c261895b5cb8ce58107b1c07a",
+      "adaptedAs": [
+        "shader-craft-water-quality"
+      ]
+    },
+    {
+      "path": "prompts/video-to-shader-prompt.md",
+      "blob": "3ce101fddc9aa4c8f00453cd1f98026ceee44dc5",
+      "adaptedAs": [
+        "shader-craft-video-to-effect",
+        "SHADER_CRAFT_VIDEO_TO_EFFECT"
+      ]
+    },
+    {
+      "path": "CREDITS.md",
+      "blob": "d317ee028799e4aea386db46fcb37ac933e02c29",
+      "adaptedAs": [
+        "SHADER_CRAFT_CREDITS"
+      ]
+    },
+    {
+      "path": "LICENSE",
+      "blob": "9c70bdc8bad3d368a3a3e199c6424df0d0f90e75",
+      "adaptedAs": [
+        "SHADER_CRAFT_LICENSE"
+      ]
+    }
+  ]
+}
