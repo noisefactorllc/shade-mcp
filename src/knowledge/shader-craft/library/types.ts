@@ -50,6 +50,8 @@ export interface ShaderCraftLibrarySymbol {
   exactness?: ShaderCraftExactness
   /** Keys of SHADER_CRAFT_CREDITS.techniques: the sources of the technique. */
   credits: string[]
+  /** How this symbol's code departs from the upstream code, beyond the doc comments, when it does. */
+  adaptation?: string
   glsl: ShaderCraftLanguageSymbol
   wgsl: ShaderCraftLanguageSymbol
   parity?: ShaderCraftParityTolerance

@@ -9,16 +9,15 @@ export const ATMOSPHERE_GLSL = `//! atmosphere: skies and sun. simpleSky is a ch
 
 /// Cheap analytic sky: horizon-to-zenith gradient, darker ground below the horizon, sun glow lobes.
 /// Returns linear radiance (roughly 0-2; the glow can exceed 1 near the sun).
-/// The ground blend is smoothstep(0.0, -0.08, rd.y): descending edges, which GLSL and WGSL leave undefined. The
-/// renderers tested (Apple GPUs through Metal, SwiftShader) evaluate the smoothstep formula, a ramp that falls below
-/// the horizon.
+/// Upstream writes the ground blend as smoothstep(0.0, -0.08, rd.y), with descending edges that GLSL and WGSL leave
+/// undefined; here it is 1.0 - smoothstep(-0.08, 0.0, rd.y), the same ramp with ascending edges.
 /// @use quick backgrounds, reflections, fog color, stylized daylight
 vec3 simpleSky(vec3 rd, vec3 sunDir) {
     float y = max(rd.y, 0.0);
     vec3 zenith = vec3(0.12, 0.28, 0.62);
     vec3 horizon = vec3(0.62, 0.74, 0.88);
     vec3 col = mix(horizon, zenith, pow(y, 0.5));
-    col = mix(col, vec3(0.28, 0.26, 0.24), smoothstep(0.0, -0.08, rd.y));
+    col = mix(col, vec3(0.28, 0.26, 0.24), 1.0 - smoothstep(-0.08, 0.0, rd.y));
     float mu = max(dot(rd, sunDir), 0.0);
     col += vec3(1.0, 0.75, 0.45) * (0.25 * pow(mu, 8.0) + 0.6 * pow(mu, 64.0) + 2.0 * pow(mu, 512.0));
     return col;
@@ -103,16 +102,15 @@ export const ATMOSPHERE_WGSL = `//! atmosphere: skies and sun. simpleSky is a ch
 
 /// Cheap analytic sky: horizon-to-zenith gradient, darker ground below the horizon, sun glow lobes.
 /// Returns linear radiance (roughly 0-2; the glow can exceed 1 near the sun).
-/// The ground blend is smoothstep(0.0, -0.08, rd.y): descending edges, which GLSL and WGSL leave undefined. The
-/// renderers tested (Apple GPUs through Metal, SwiftShader) evaluate the smoothstep formula, a ramp that falls below
-/// the horizon.
+/// Upstream writes the ground blend as smoothstep(0.0, -0.08, rd.y), with descending edges that GLSL and WGSL leave
+/// undefined; here it is 1.0 - smoothstep(-0.08, 0.0, rd.y), the same ramp with ascending edges.
 /// @use quick backgrounds, reflections, fog color, stylized daylight
 fn simpleSky(rd: vec3f, sunDir: vec3f) -> vec3f {
     let y = max(rd.y, 0.0);
     let zenith = vec3f(0.12, 0.28, 0.62);
     let horizon = vec3f(0.62, 0.74, 0.88);
     var col = mix(horizon, zenith, pow(y, 0.5));
-    col = mix(col, vec3f(0.28, 0.26, 0.24), smoothstep(0.0, -0.08, rd.y));
+    col = mix(col, vec3f(0.28, 0.26, 0.24), 1.0 - smoothstep(-0.08, 0.0, rd.y));
     let mu = max(dot(rd, sunDir), 0.0);
     col += vec3f(1.0, 0.75, 0.45) * (0.25 * pow(mu, 8.0) + 0.6 * pow(mu, 64.0) + 2.0 * pow(mu, 512.0));
     return col;

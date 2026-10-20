@@ -70,6 +70,30 @@ function declarations(source: string, language: ShaderCraftLanguage): { found: D
   return { found, unparsed }
 }
 
+// smoothstep calls whose two edges are numeric literals: GLSL and WGSL leave edge0 >= edge1 undefined, so library
+// code writes a falling ramp as 1.0 - smoothstep(lo, hi, x).
+function literalSmoothsteps(source: string): Array<{ call: string; ascending: boolean }> {
+  const code = stripComments(source)
+  const found: Array<{ call: string; ascending: boolean }> = []
+  const literal = /^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?f?$/
+  for (const match of code.matchAll(/\bsmoothstep\s*\(/g)) {
+    const args = ['']
+    let depth = 1, i = match.index + match[0].length
+    for (; i < code.length; i++) {
+      const c = code[i]
+      if (c === '(') depth++
+      if (c === ')' && --depth === 0) break
+      if (c === ',' && depth === 1) args.push('')
+      else args[args.length - 1] += c
+    }
+    const [lo, hi] = args.map(arg => arg.trim())
+    if (literal.test(lo) && literal.test(hi)) {
+      found.push({ call: code.slice(match.index, i + 1), ascending: parseFloat(lo) < parseFloat(hi) })
+    }
+  }
+  return found
+}
+
 const BY_ID = new Map(SHADER_CRAFT_LIBRARY.map(entry => [entry.id, entry]))
 const INDEX = new Map(SHADER_CRAFT_LIBRARY.map((entry, i) => [entry.id, i]))
 
@@ -144,6 +168,14 @@ describe('shader-craft library index', () => {
     expect(renamed).toContain('sdBox(vec3,vec3) -> sdBox_f3f3')
     expect(renamed).toContain('sdBox(vec2,vec2) -> sdBox_f2f2')
     expect(renamed).toHaveLength(45)
+  })
+
+  it('records where code departs from upstream', () => {
+    const adapted = SHADER_CRAFT_LIBRARY.filter(e => e.adaptation)
+    for (const entry of adapted) expect(entry.adaptation!.length, entry.id).toBeGreaterThan(20)
+    expect(BY_ID.get('simpleSky(vec3,vec3)')?.adaptation).toContain('1.0 - smoothstep(-0.08, 0.0, rd.y)')
+    expect(BY_ID.get('ditherTPDF(vec2,int)')?.adaptation).toContain('pixel')
+    expect(adapted.filter(e => e.glsl.requires.includes('ZERO')).length).toBe(5)
   })
 
   it('takes exactness tags from the upstream doc comments', () => {
@@ -278,6 +310,18 @@ describe('shader-craft library follows the Noisemaker effect contract', () => {
       .filter(([, text, language]) => banned[language].test(stripComments(text)))
       .map(([label, text, language]) => `${label}: ${stripComments(text).match(banned[language])![0]}`)
     expect(offenders).toEqual([])
+  })
+
+  it('writes smoothstep edges in ascending order, as both languages require', () => {
+    // The check catches upstream's simpleSky form and passes its rewrite.
+    expect(literalSmoothsteps('mix(col, ground, smoothstep(0.0, -0.08, rd.y))'))
+      .toEqual([{ call: 'smoothstep(0.0, -0.08, rd.y)', ascending: false }])
+    expect(literalSmoothsteps('mix(col, ground, 1.0 - smoothstep(-0.08, 0.0, rd.y))'))
+      .toEqual([{ call: 'smoothstep(-0.08, 0.0, rd.y)', ascending: true }])
+    const calls = sources.flatMap(([label, text]) => literalSmoothsteps(text).map(c => ({ ...c, label })))
+    expect(calls.filter(c => !c.ascending).map(c => `${c.label}: ${c.call}`)).toEqual([])
+    // simpleSky, debugDistance and waterWaveD, in both languages: the check is not vacuous.
+    expect(calls.length).toBeGreaterThanOrEqual(6)
   })
 
   it('hashes with integers, never fract(sin())', () => {
