@@ -8,6 +8,9 @@ Follow the shader-craft workflow (\`SHADER_CRAFT_WORKFLOW\`) to recreate the ref
 effect: a definition plus a GLSL and a WGSL program for every pass. Multiple passes, internal textures and
 feedback/state textures are available; nothing has to fit in one pass.
 
+**Scope:** This workflow creates procedural interpretations of reference videos. It is not intended for
+photographic-quality reproductions.
+
 **Who runs this workflow:** a person's own coding agent, connected to the app's agent commands. Shade's in-app model
 does not run it.
 
