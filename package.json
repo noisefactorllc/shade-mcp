@@ -52,6 +52,10 @@
       "types": "./dist/analysis/index.d.ts",
       "import": "./dist/analysis/index.js"
     },
+    "./knowledge/shader-craft": {
+      "types": "./dist/knowledge/shader-craft.d.ts",
+      "import": "./dist/knowledge/shader-craft.js"
+    },
     "./knowledge": {
       "types": "./dist/knowledge/index.d.ts",
       "import": "./dist/knowledge/index.js"

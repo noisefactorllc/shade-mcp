@@ -223,7 +223,7 @@ These tools analyze files on disk and do not need a browser.
 | `compareShaders` | Compare shader structure: function names, uniforms, and line counts. |
 | `analyzeBranching` | Analyze unnecessary shader branching with AI. Return optimization suggestions. The tool requires an AI key. |
 
-### Knowledge Tools (4)
+### Knowledge Tools (7)
 
 In-memory search indexes.
 
@@ -233,6 +233,9 @@ In-memory search indexes.
 | `analyzeEffect` | Return the full definition, shader source, uniforms, and passes for an effect ID. |
 | `searchShaderSource` | Search GLSL source code across all effects with a regular expression. |
 | `searchShaderKnowledge` | Search curated shader documentation by meaning: DSL grammar, GLSL techniques, patterns, errors, and the shader-craft references (category `shader-craft`). |
+| `searchShaderLibrary` | Search local GLSL/WGSL library symbols by name, signature, summary and module. |
+| `checkShader` | Return advisory source findings for GLSL/WGSL text or a shader file inside the effects directory or project root. |
+| `bundleShader` | Inline used library symbols and their dependencies with credits. Return source; write a file only with explicit `write: true`. |
 
 ### Utility Tools (2)
 

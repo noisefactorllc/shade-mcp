@@ -18,6 +18,7 @@ import { registerAnalyzeBranching } from './tools/analysis/branching.js'
 import { registerSearchEffects } from './tools/knowledge/search-effects.js'
 import { registerAnalyzeEffect } from './tools/knowledge/analyze-effect.js'
 import { registerSearchShaderSource } from './tools/knowledge/search-source.js'
+import { registerShaderCraft } from './tools/knowledge/shader-craft.js'
 import { registerSearchShaderKnowledge } from './tools/knowledge/search-knowledge.js'
 
 // Utility tools
@@ -35,7 +36,7 @@ export function createShadeServer(): McpServer {
     version: VERSION,
   }))
 
-  // Register all 18 tools
+  // Register all 21 tools
   registerCompileEffect(server)
   registerRenderEffectFrame(server)
   registerDescribeEffectFrame(server)
@@ -52,6 +53,7 @@ export function createShadeServer(): McpServer {
   registerAnalyzeEffect(server)
   registerSearchShaderSource(server)
   registerSearchShaderKnowledge(server)
+  registerShaderCraft(server)
   registerListEffects(server)
   registerGenerateManifest(server)
 

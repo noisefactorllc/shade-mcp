@@ -11,6 +11,7 @@ export default defineConfig({
     'ai/provider': 'src/ai/provider.ts',
     'analysis/index': 'src/analysis/index.ts',
     'knowledge/index': 'src/knowledge/index.ts',
+    'knowledge/shader-craft': 'src/knowledge/shader-craft.ts',
   },
   format: ['esm'],
   target: 'node22',

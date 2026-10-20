@@ -1,3 +1,4 @@
+import { literalSmoothsteps } from '../knowledge/shader-craft/source.js'
 import { describe, it, expect } from 'vitest'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -70,29 +71,6 @@ function declarations(source: string, language: ShaderCraftLanguage): { found: D
   return { found, unparsed }
 }
 
-// smoothstep calls whose two edges are numeric literals: GLSL and WGSL leave edge0 >= edge1 undefined, so library
-// code writes a falling ramp as 1.0 - smoothstep(lo, hi, x).
-function literalSmoothsteps(source: string): Array<{ call: string; ascending: boolean }> {
-  const code = stripComments(source)
-  const found: Array<{ call: string; ascending: boolean }> = []
-  const literal = /^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?f?$/
-  for (const match of code.matchAll(/\bsmoothstep\s*\(/g)) {
-    const args = ['']
-    let depth = 1, i = match.index + match[0].length
-    for (; i < code.length; i++) {
-      const c = code[i]
-      if (c === '(') depth++
-      if (c === ')' && --depth === 0) break
-      if (c === ',' && depth === 1) args.push('')
-      else args[args.length - 1] += c
-    }
-    const [lo, hi] = args.map(arg => arg.trim())
-    if (literal.test(lo) && literal.test(hi)) {
-      found.push({ call: code.slice(match.index, i + 1), ascending: parseFloat(lo) < parseFloat(hi) })
-    }
-  }
-  return found
-}
 
 const BY_ID = new Map(SHADER_CRAFT_LIBRARY.map(entry => [entry.id, entry]))
 const INDEX = new Map(SHADER_CRAFT_LIBRARY.map((entry, i) => [entry.id, i]))
@@ -315,9 +293,9 @@ describe('shader-craft library follows the Noisemaker effect contract', () => {
   it('writes smoothstep edges in ascending order, as both languages require', () => {
     // The check catches upstream's simpleSky form and passes its rewrite.
     expect(literalSmoothsteps('mix(col, ground, smoothstep(0.0, -0.08, rd.y))'))
-      .toEqual([{ call: 'smoothstep(0.0, -0.08, rd.y)', ascending: false }])
+      .toEqual([{ call: 'smoothstep(0.0, -0.08, rd.y)', ascending: false, offset: 17 }])
     expect(literalSmoothsteps('mix(col, ground, 1.0 - smoothstep(-0.08, 0.0, rd.y))'))
-      .toEqual([{ call: 'smoothstep(-0.08, 0.0, rd.y)', ascending: true }])
+      .toEqual([{ call: 'smoothstep(-0.08, 0.0, rd.y)', ascending: true, offset: 23 }])
     const calls = sources.flatMap(([label, text]) => literalSmoothsteps(text).map(c => ({ ...c, label })))
     expect(calls.filter(c => !c.ascending).map(c => `${c.label}: ${c.call}`)).toEqual([])
     // simpleSky, debugDistance and waterWaveD, in both languages: the check is not vacuous.

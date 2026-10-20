@@ -19,11 +19,13 @@ import { registerAnalyzeBranching } from '../tools/analysis/branching.js'
 import { registerSearchEffects } from '../tools/knowledge/search-effects.js'
 import { registerAnalyzeEffect } from '../tools/knowledge/analyze-effect.js'
 import { registerSearchShaderSource } from '../tools/knowledge/search-source.js'
+import { registerShaderCraft } from '../tools/knowledge/shader-craft.js'
 import { registerSearchShaderKnowledge } from '../tools/knowledge/search-knowledge.js'
 import { registerListEffects } from '../tools/utility/list-effects.js'
 import { registerGenerateManifest } from '../tools/utility/generate-manifest.js'
 
 const EXPECTED_TOOLS = [
+  'searchShaderLibrary', 'checkShader', 'bundleShader',
   'compileEffect',
   'renderEffectFrame',
   'describeEffectFrame',
@@ -62,13 +64,14 @@ function createServer(): McpServer {
   registerAnalyzeEffect(server)
   registerSearchShaderSource(server)
   registerSearchShaderKnowledge(server)
+  registerShaderCraft(server)
   registerListEffects(server)
   registerGenerateManifest(server)
   return server
 }
 
 describe('MCP server integration', () => {
-  it('registers all 18 tools', async () => {
+  it('registers all 21 tools', async () => {
     const server = createServer()
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
 
@@ -80,7 +83,7 @@ describe('MCP server integration', () => {
     const { tools } = await client.listTools()
     const toolNames = tools.map(t => t.name).sort()
 
-    expect(tools).toHaveLength(18)
+    expect(tools).toHaveLength(21)
     expect(toolNames).toEqual(EXPECTED_TOOLS.slice().sort())
 
     await client.close()

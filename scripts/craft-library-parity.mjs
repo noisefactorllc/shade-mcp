@@ -16,9 +16,10 @@
 // min or max, a point exactly on a sector boundary), its overrides below avoid those inputs and say why. Any GLSL or
 // WGSL compile failure fails the run, and so does the full library compiled as one program in each language.
 //
+// Add --bundled-only to run only calibration and the five complete bundled programs.
 // Usage: NOISEMAKER=/path/to/noisemaker node scripts/craft-library-parity.mjs [--only id,id] [--json report.json]
 // Set SHADE_SWIFTSHADER=1 on machines without a GPU. Build dist/ first (npm run build).
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, writeFileSync, readFileSync } from 'node:fs'
 
 const NM = process.env.NOISEMAKER
 if (!NM || !existsSync(`${NM}/shaders/src/index.js`)) {
@@ -33,11 +34,13 @@ const option = name => {
 // Ids contain commas, so split only on commas outside parentheses.
 const only = option('--only')?.match(/(?:[^,(]|\([^)]*\))+/g)?.map(s => s.trim()).filter(Boolean)
 const jsonPath = option('--json')
+const bundledOnly = args.includes('--bundled-only')
 
 const {
   SHADER_CRAFT_LIBRARY: LIBRARY,
   SHADER_CRAFT_LIBRARY_MODULES: MODULES,
   getShaderCraftSymbolSource: sourceOf,
+  bundleShaderSource,
 } = await import(new URL('../dist/knowledge/index.js', import.meta.url).href)
 const { BrowserSession, getServerUrl } = await import(new URL('../dist/harness/index.js', import.meta.url).href)
 
@@ -557,6 +560,59 @@ fn main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
   }
 }
 
+// Five complete programs exercise dependency composition rather than isolated library calls. Results are
+// encoded float words, so the comparison retains 32-bit precision instead of accepting 8-bit color rounding.
+function bundledProbes() {
+  const programs = [
+    { id: 'noise-fbm',
+      glsl: 'float value = fbm(uv * 3.0, 5);',
+      wgsl: 'let value = fbm_f2i(uv * 3.0, 5);' },
+    { id: 'sdf-raymarch', scene: true,
+      glsl: 'vec3 ro = vec3(0.0, 0.0, -3.0); vec3 rd = normalize(vec3(uv * 0.2, 1.0)); vec3 hit = raymarch(ro, rd, 0.0, 10.0, 1.0); float value = hit.x + dot(calcNormal(ro + rd * hit.x, 0.001), vec3(0.02, 0.03, 0.04));',
+      wgsl: 'let ro = vec3f(0.0, 0.0, -3.0); let rd = normalize(vec3f(uv * 0.2, 1.0)); let hit = raymarch(ro, rd, 0.0, 10.0, 1.0); let value = hit.x + dot(calcNormal(ro + rd * hit.x, 0.001), vec3f(0.02, 0.03, 0.04));' },
+    { id: 'sdf-2d',
+      glsl: 'float value = smoothstep(-0.1, 0.1, sdBox(uv, vec2(0.4, 0.25)));',
+      wgsl: 'let value = smoothstep(-0.1, 0.1, sdBox_f2f2(uv, vec2f(0.4, 0.25)));' },
+    { id: 'cloud-volume',
+      glsl: 'vec3 radiance = vec3(0.0); vec3 transmittance = vec3(1.0); for (int i=0; i<8; i++) { float density = max(fbm(vec3(uv, float(i) * 0.1), 3, 2.0, 0.5), 0.0) + 0.1; volumeStep(radiance, transmittance, vec3(density), vec3(0.5, 0.7, 0.9) * beerPowder(density), 0.125); } float value = dot(radiance, vec3(0.2, 0.3, 0.5)) + transmittance.x;',
+      wgsl: 'var radiance = vec3f(0.0); var transmittance = vec3f(1.0); for (var i=0; i<8; i++) { let density = max(fbm_f3iff(vec3f(uv, f32(i) * 0.1), 3, 2.0, 0.5), 0.0) + 0.1; volumeStep(&radiance, &transmittance, vec3f(density), vec3f(0.5, 0.7, 0.9) * beerPowder(density), 0.125); } let value = dot(radiance, vec3f(0.2, 0.3, 0.5)) + transmittance.x;' },
+    { id: 'tonemap-pipeline',
+      glsl: 'vec3 color = linearToSrgb(tonemapAgX(vec3(uv + 1.0, 0.4) * 4.0)); float value = dot(color, vec3(0.2, 0.3, 0.5));',
+      wgsl: 'let color = linearToSrgb(tonemapAgX(vec3f(uv + vec2f(1.0), 0.4) * 4.0)); let value = dot(color, vec3f(0.2, 0.3, 0.5));' },
+  ]
+  return programs.map(program => {
+    const glsl = bundleShaderSource(`#version 300 es
+precision highp float;
+precision highp int;
+out vec4 fragColor;
+${program.scene ? '#define ZERO (min(int(gl_FragCoord.x), 0))' : ''}
+${program.scene ? MAP.glsl : ''}
+void main() {
+    vec2 uv = (gl_FragCoord.xy / vec2(${W}.0, ${H}.0)) * 2.0 - 1.0;
+    ${program.glsl}
+    uint word = floatBitsToUint(value);
+    fragColor = vec4(float(word & 255u), float((word >> 8u) & 255u), float((word >> 16u) & 255u), float(word >> 24u)) / 255.0;
+}`, 'glsl')
+    const wgsl = bundleShaderSource(`@group(0) @binding(0) var<uniform> resolution: vec2f;
+${program.scene ? 'var<private> ZERO: i32;' : ''}
+${program.scene ? MAP.wgsl : ''}
+@fragment fn main(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    ${program.scene ? 'ZERO = min(i32(position.x), 0);' : ''}
+    let pixel = vec2f(position.x, resolution.y - position.y);
+    let uv = (pixel / vec2f(${W}.0, ${H}.0)) * 2.0 - vec2f(1.0);
+    ${program.wgsl}
+    let word = bitcast<u32>(value);
+    return vec4f(f32(word & 255u), f32((word >> 8u) & 255u), f32((word >> 16u) & 255u), f32(word >> 24u)) / 255.0;
+}`, 'wgsl')
+    // Use the strictest bound compatible with every included primitive's established tolerance. The program's
+    // aggregate result must stay within it too; failures require investigation, not a widened automatic bound.
+    const included = [...new Set([...glsl.added, ...wgsl.added])]
+    const tolerance = Math.max(0, ...included.map(id => BY_ID.get(id).parity?.tolerance ?? 0))
+    return { id: `(bundled ${program.id})`, kind: 'bundled', words: 1, samples: PIXELS, kinds: ['float'],
+      glsl: glsl.source, wgsl: wgsl.source, added: { glsl: glsl.added, wgsl: wgsl.added }, tolerance }
+  })
+}
+
 // ---------------------------------------------------------------------------------------------- rendering
 async function renderAll(backend, probes) {
   const session = new BrowserSession({ backend, blankPage: true, viewerRoot: NM, effectsDir: `${NM}/shaders/effects` })
@@ -566,6 +622,19 @@ async function renderAll(backend, probes) {
     await session.setup()
     const page = session.page
     const base = getServerUrl()
+    // Import and execute the shipped browser entry in a real page. No Node shims or external host is used.
+    if (probes.some(p => p.kind === 'bundled')) {
+      const moduleSource = readFileSync(new URL('../dist/knowledge/shader-craft.js', import.meta.url), 'utf8')
+      await page.route(`${base}/craft-knowledge.js`, route => route.fulfill({ contentType: 'text/javascript', body: moduleSource }))
+      const proof = await page.evaluate(async url => {
+        const api = await import(url)
+        return { rule: api.checkShaderSource('round(x)', 'glsl')[0]?.rule,
+          added: api.bundleShaderSource('tonemapAgX(vec3(1.0));', 'glsl').added,
+          found: api.searchShaderLibrary('tonemapAgX', { language: 'wgsl', limit: 1 })[0]?.name }
+      }, `${base}/craft-knowledge.js`)
+      if (proof.rule !== 'round' || !proof.added.includes('tonemapAgX(vec3)') || proof.found !== 'tonemapAgX') throw new Error('Browser knowledge entry failed its API proof')
+      console.log(`craft-library-parity: ${backend} browser knowledge entry: 3/3 APIs passed`)
+    }
     rendererName = await page.evaluate(async backend => {
       if (backend === 'webgpu') {
         const adapter = await navigator.gpu?.requestAdapter()
@@ -668,11 +737,13 @@ function scaledDifference(x, y) {
 
 // ---------------------------------------------------------------------------------------------- main
 const entries = only ? LIBRARY.filter(entry => only.includes(entry.id)) : LIBRARY
-if (only && entries.length !== only.length) {
+if (!bundledOnly && only && entries.length !== only.length) {
   console.error(`craft-library-parity: unknown ids: ${only.filter(id => !BY_ID.has(id)).join(', ')}`)
   process.exit(2)
 }
-const probes = [calibrationProbe(), fullLibraryProbe(), ...entries.map(buildProbe)]
+const bundles = bundledProbes().filter(p => !bundledOnly || !only || only.includes(p.id.slice(9, -1)))
+if (bundledOnly && only && bundles.length !== only.length) throw new Error('Unknown bundled program in --only')
+const probes = [calibrationProbe(), ...bundledOnly ? [] : [fullLibraryProbe(), ...entries.map(buildProbe)], ...bundles]
 const rendered = {}
 const renderers = {}
 for (const backend of ['webgl2', 'webgpu']) ({ results: rendered[backend], rendererName: renderers[backend] } = await renderAll(backend, probes))
@@ -706,10 +777,10 @@ for (const backend of ['webgl2', 'webgpu']) {
 let functions = 0, constants = 0, exact = 0, equal = 0, tolerated = 0
 if (failures.length === 0) {
   probes.forEach((probe, i) => {
-    if (probe.kind !== 'function' && probe.kind !== 'const') return
+    if (!['function', 'const', 'bundled'].includes(probe.kind)) return
     const entry = BY_ID.get(probe.id)
     if (probe.kind === 'function') functions++
-    else constants++
+    else if (probe.kind === 'const') constants++
     const a = decode(rendered.webgl2[i]), b = decode(rendered.webgpu[i])
     let differing = 0, maxDifference = 0, firstDifference = null, nonzero = false
     for (let sample = 0; sample < probe.samples; sample++) {
@@ -727,8 +798,8 @@ if (failures.length === 0) {
         }
       }
     }
-    const tolerance = entry.parity?.tolerance ?? 0
-    report.symbols.push({ id: probe.id, samples: probe.samples, words: probe.words, differing, maxDifference, tolerance })
+    const tolerance = probe.kind === 'bundled' ? probe.tolerance : entry.parity?.tolerance ?? 0
+    report.symbols.push({ id: probe.id, ...probe.added ? { added: probe.added } : {}, samples: probe.samples, words: probe.words, differing, maxDifference, tolerance })
     if (!nonzero) failures.push(`${probe.id}: both backends wrote only zero words; the probe did not render`)
     else if (differing === 0) exact++
     else if (maxDifference === 0) equal++
@@ -739,9 +810,9 @@ if (failures.length === 0) {
 
 for (const backend of ['webgl2', 'webgpu']) {
   const { probes: total, compiled } = report.backends[backend]
-  console.log(`craft-library-parity: ${backend} compiled and ran ${compiled}/${total} probes (calibration, full library, ${entries.length} symbols)`)
+  console.log(`craft-library-parity: ${backend} compiled and ran ${compiled}/${total} probes (calibration, ${bundledOnly ? 0 : 1} full library, ${bundledOnly ? 0 : entries.length} symbols, ${bundles.length} bundled programs)`)
 }
-console.log(`craft-library-parity: compared ${functions} functions and ${constants} constants: ${exact} bit-identical, ` +
+console.log(`craft-library-parity: compared ${functions} functions, ${constants} constants and ${bundles.length} bundled programs: ${exact} bit-identical, ` +
   `${equal} equal apart from the sign of zero or NaN bits, ${tolerated} within a recorded tolerance`)
 if (jsonPath) writeFileSync(jsonPath, JSON.stringify({ ...report, failures }, null, 2))
 if (failures.length) {

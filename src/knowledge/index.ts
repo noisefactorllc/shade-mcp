@@ -93,3 +93,10 @@ export type {
   ShaderCraftLibraryModule,
   ShaderCraftProgramSymbol,
 } from './shader-craft/index.js'
+
+export { checkShaderSource } from './shader-craft/checker.js'
+export type { ShaderSourceFinding, ShaderSourceRule } from './shader-craft/checker.js'
+export { bundleShaderSource } from './shader-craft/bundler.js'
+export type { BundledShaderSource } from './shader-craft/bundler.js'
+export { searchShaderLibrary } from './shader-craft/search-library.js'
+export type { ShaderLibrarySearchOptions, ShaderLibrarySearchResult } from './shader-craft/search-library.js'
