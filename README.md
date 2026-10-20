@@ -232,7 +232,7 @@ In-memory search indexes.
 | `searchEffects` | Search effect library by concept, tag, algorithm, or visual style. |
 | `analyzeEffect` | Return the full definition, shader source, uniforms, and passes for an effect ID. |
 | `searchShaderSource` | Search GLSL source code across all effects with a regular expression. |
-| `searchShaderKnowledge` | Search curated shader documentation by meaning: DSL grammar, GLSL techniques, patterns, and errors. |
+| `searchShaderKnowledge` | Search curated shader documentation by meaning: DSL grammar, GLSL techniques, patterns, errors, and the shader-craft references (category `shader-craft`). |
 
 ### Utility Tools (2)
 
@@ -251,6 +251,29 @@ npm run dev        # watch mode
 ```
 
 Tests and typecheck are separate checks. Vitest does not typecheck. Run both commands.
+
+## Credits
+
+The shader-craft knowledge in `src/knowledge/shader-craft/` adapts the shader-art-coding skill from
+[shader-skills](https://github.com/gokayfem/shader-skills) by gokayfem (MIT, Copyright (c) 2026 gokayfem) for
+Noisemaker effects. It is pinned to upstream commit `e09bc993bf04201f26c03c87c89210e9b472f526` (2026-10-19).
+`provenance.json` records each upstream file and its blob hash. The upstream licence ships in the knowledge bundle as
+`SHADER_CRAFT_LICENSE`.
+
+The techniques come from their original authors, each credited in `SHADER_CRAFT_CREDITS`:
+
+- Inigo Quilez: distance functions, smooth minimum, soft shadows, filtering, noise derivatives, domain warping
+- Mercury demogroup: hg_sdf combinators and repetition
+- Jarzynski and Olano: PCG hashes
+- Stefan Gustavson, and Gustavson and McEwan: simplex noise
+- Ken Perlin: gradient noise and turbulence; Perlin and Neyret: flow noise
+- Bridson, Hourihan and Nordenstam: curl noise
+- Jorge Jimenez: interleaved gradient noise; Martin Roberts: R2 sequence
+- Troy Sobotka and Benjamin Wrensch: AgX; the Khronos Group: PBR Neutral; Stephen Hill: ACES fit and wrap lighting
+- Bjorn Ottosson: Oklab; Brian Karis: environment BRDF; the Filament documentation: GGX shading
+- Barre-Brisebois and Bouchard: fast translucency
+- Sebastien Hillaire: volumes and sky; Andrew Schneider: clouds
+- Mark Finch: water waves; Ryan Geiss: terrain; Müller et al.: procedural buildings
 
 ## License
 
