@@ -182,3 +182,43 @@ it('checks float arithmetic in GLSL global initializers and source fragments', (
   expect(rules('2 * PI', 'glsl')).toContain('integer-float-mix')
   expect(rules('const float doubled = 2.0 * PI; void main(){}', 'glsl')).not.toContain('integer-float-mix')
 })
+
+it('prototypes caller-owned GLSL dependencies before inserted library functions', () => {
+  const own = 'float hash12(vec2 p){return p.x;}'
+  const bundled = bundleShaderSource(`precision highp float;\n${own}\nvoid main(){valueNoiseD(vec2(0.3));}`, 'glsl')
+  expect(bundled.added).toContain('valueNoiseD(vec2)')
+  expect(bundled.added).not.toContain('hash12(vec2)')
+  expect(bundled.source).toContain(own)
+  expect(bundled.source.indexOf('float hash12(vec2 p);')).toBeGreaterThan(-1)
+  expect(bundled.source.indexOf('float hash12(vec2 p);')).toBeLessThan(bundled.source.indexOf('vec3 valueNoiseD('))
+  const withPrototype = bundleShaderSource(`precision highp float;\nfloat hash12(vec2 p);\n${own}\nvoid main(){valueNoiseD(vec2(0.3));}`, 'glsl')
+  expect(withPrototype.source.match(/float hash12\(vec2 p\);/g)).toHaveLength(1)
+  expect(bundleShaderSource(bundled.source, 'glsl').added).toEqual([])
+})
+it('preserves GLSL macro definitions of library functions and dependencies', () => {
+  const source = '#define tonemapAgX(c) (c)\nvoid main(){tonemapAgX(vec3(1.0));}'
+  expect(bundleShaderSource(source, 'glsl')).toEqual({ source, added: [], credits: [] })
+  const dependency = bundleShaderSource('#define hash12(p) ((p).x)\nvoid main(){valueNoiseD(vec2(0.3));}', 'glsl')
+  expect(dependency.added).toContain('valueNoiseD(vec2)')
+  expect(dependency.added).not.toContain('hash12(vec2)')
+  expect(dependency.source).not.toMatch(/float hash12\(/)
+})
+it('checks GLSL macro expressions on their physical source lines, excluding directive syntax', () => {
+  const source = '#define HASH(x) fract(sin(x)*43758.5453)\n#define ROUND(x) \\\n    round(x)\n#define iTime(mainImage) 1.0\n#ifdef iMouse\n#endif'
+  const findings = checkShaderSource(source, 'glsl')
+  expect(findings).toContainEqual(expect.objectContaining({ rule: 'sine-hash', line: 1 }))
+  expect(findings).toContainEqual(expect.objectContaining({ rule: 'round', line: 3 }))
+  expect(findings.filter(f => f.rule === 'shadertoy-contract')).toEqual([])
+  expect(rules('#define HASH(x) fract(x)\n#define ROUND(x) floor(x+0.5)', 'glsl')).toEqual([])
+})
+for (const lang of languages) it(`treats custom helper conditions as potentially varying in ${lang}`, () => {
+  const helper = lang === 'glsl' ? 'bool visible(){return gl_FragCoord.x>0.0;}'
+    : 'var<private> pixel: vec4f; fn visible()->bool{return pixel.x>0.0;}'
+  const body = lang === 'glsl' ? 'if(visible()){float x=dFdx(gl_FragCoord.y);}'
+    : 'pixel=position; if(visible()){let x=dpdx(pixel.y);}'
+  expect(rules(helper + program(body, lang), lang)).toContain('derivative-control-flow')
+  expect(rules(helper.replaceAll('visible', 'all') + program(body.replaceAll('visible', 'all'), lang), lang)).toContain('derivative-control-flow')
+  const uniform = lang === 'glsl' ? 'uniform float time;' : '@group(0) @binding(0) var<uniform> time:f32;'
+  const derivative = lang === 'glsl' ? 'dFdx' : 'dpdx'
+  expect(rules(uniform + program(`if(sin(time)>0.0){${derivative}(time);}`, lang), lang)).not.toContain('derivative-control-flow')
+})

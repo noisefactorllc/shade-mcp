@@ -32,9 +32,11 @@ export function bundleShaderSource(source: string, language: ShaderCraftLanguage
       for (const d of item.declarators ?? []) { definedNames.add(d.name); definitions.add(d.name) }
     }
   }
+  const macros = new Set(items.filter(item => item.directive === 'define').map(item => item.name))
   const own = (id: string) => {
     const e = byId.get(id)!
-    return definitions.has(language === 'glsl' && e.kind === 'function' ? e.id : e[language].name)
+    return (language === 'glsl' && macros.has(e.glsl.name)) ||
+      definitions.has(language === 'glsl' && e.kind === 'function' ? e.id : e[language].name)
   }
   const byName = new Map<string, typeof SHADER_CRAFT_LIBRARY>()
   for (const e of SHADER_CRAFT_LIBRARY) byName.set(e[language].name, [...byName.get(e[language].name) ?? [], e])
@@ -103,8 +105,19 @@ export function bundleShaderSource(source: string, language: ShaderCraftLanguage
     const zero = items.find(i => i.name === 'ZERO')!
     if (zero.start >= cut) throw new Error('Define ZERO in the GLSL preamble before the first function or library-dependent initializer.')
   }
-  const prototype = language === 'glsl' && requires.has('map') && !items.some(i => i.kind === 'prototype' && i.name === 'map' && i.start < cut)
-    ? 'vec2 map(vec3 p);\n\n' : ''
+  // Library code may call a caller-owned replacement whose body follows the inserted declarations. Retain
+  // that body and make its exact signature visible first, just as for the caller-owned map scene contract.
+  const dependencies = new Set(added.flatMap(id => byId.get(id)![language].dependencies))
+  const callerPrototypes: string[] = []
+  if (language === 'glsl') for (const item of items) {
+    if (item.kind !== 'function' || item.start < cut || macros.has(item.name)) continue
+    const signature = (entry: typeof item) => `${entry.name}(${entry.params!.map(p => p.type).join(',')})`
+    if (!dependencies.has(signature(item))) continue
+    if (items.some(entry => entry.kind === 'prototype' && entry.start < cut && signature(entry) === signature(item))) continue
+    callerPrototypes.push(source.slice(item.start, tokens[item.bodyOpen!].start).trim() + ';')
+  }
+  const prototype = callerPrototypes.join('\n') + (callerPrototypes.length ? '\n\n' : '') + (language === 'glsl' && requires.has('map') && !items.some(i => i.kind === 'prototype' && i.name === 'map' && i.start < cut)
+    ? 'vec2 map(vec3 p);\n\n' : '')
   const library = added.map(id => getShaderCraftSymbolSource(id, language)).join('\n\n')
   let result = source.slice(0, cut) + '\n' + (oldBlock ? '' : header + '\n\n') + prototype + library + '\n\n' + source.slice(cut)
   if (oldBlock) result = result.replace(CREDIT_BLOCK, header)

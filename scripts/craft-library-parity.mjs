@@ -16,7 +16,7 @@
 // min or max, a point exactly on a sector boundary), its overrides below avoid those inputs and say why. Any GLSL or
 // WGSL compile failure fails the run, and so does the full library compiled as one program in each language.
 //
-// Add --bundled-only to run only calibration and the five complete bundled programs.
+// Add --bundled-only to run only calibration and the complete bundled programs (five representative pipelines and one caller-definition regression).
 // Usage: NOISEMAKER=/path/to/noisemaker node scripts/craft-library-parity.mjs [--only id,id] [--json report.json]
 // Set SHADE_SWIFTSHADER=1 on machines without a GPU. Build dist/ first (npm run build).
 import { existsSync, writeFileSync, readFileSync } from 'node:fs'
@@ -560,10 +560,18 @@ fn main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
   }
 }
 
-// Five complete programs exercise dependency composition rather than isolated library calls. Results are
+// Complete programs exercise dependency composition rather than isolated library calls. Results are
 // encoded float words, so the comparison retains 32-bit precision instead of accepting 8-bit color rounding.
 function bundledProbes() {
   const programs = [
+    { id: 'caller-definitions',
+      helpers: {
+        glsl: '#define tonemapAgX(c) (c)\nfloat hash12(vec2 p){return p.x;}',
+        wgsl: 'fn tonemapAgX(c:vec3f)->vec3f{return c;} fn hash12(p:vec2f)->f32{return p.x;}',
+      },
+      // Exact quarter-cell inputs isolate declaration/macro handling without introducing rounding tolerance.
+      glsl: 'float value = tonemapAgX(valueNoiseD(vec2(0.25, 0.5))).x;',
+      wgsl: 'let value = tonemapAgX(valueNoiseD(vec2f(0.25, 0.5))).x;' },
     { id: 'noise-fbm',
       glsl: 'float value = fbm(uv * 3.0, 5);',
       wgsl: 'let value = fbm_f2i(uv * 3.0, 5);' },
@@ -586,6 +594,7 @@ precision highp float;
 precision highp int;
 out vec4 fragColor;
 ${program.scene ? '#define ZERO (min(int(gl_FragCoord.x), 0))' : ''}
+${program.helpers?.glsl ?? ''}
 ${program.scene ? MAP.glsl : ''}
 void main() {
     vec2 uv = (gl_FragCoord.xy / vec2(${W}.0, ${H}.0)) * 2.0 - 1.0;
@@ -595,6 +604,7 @@ void main() {
 }`, 'glsl')
     const wgsl = bundleShaderSource(`@group(0) @binding(0) var<uniform> resolution: vec2f;
 ${program.scene ? 'var<private> ZERO: i32;' : ''}
+${program.helpers?.wgsl ?? ''}
 ${program.scene ? MAP.wgsl : ''}
 @fragment fn main(@builtin(position) position: vec4f) -> @location(0) vec4f {
     ${program.scene ? 'ZERO = min(i32(position.x), 0);' : ''}

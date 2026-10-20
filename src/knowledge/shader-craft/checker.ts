@@ -77,11 +77,20 @@ function intLiteral(expr: Expr): boolean {
   const e = unparen(expr)
   return e.kind === 'number' ? e.type === 'int' : e.kind === 'unary' && ['-', '+'].includes(e.op) && intLiteral(e.arg)
 }
-function uniformExpr(expr: Expr, uniforms: Set<string>): boolean {
+// Only known pure built-ins preserve uniformity from their arguments. A custom helper can read varying
+// module state even when it takes no arguments; unknown helpers therefore remain potentially non-uniform.
+const UNIFORM_BUILTINS = new Set((
+  'abs acos acosh all any asin asinh atan atan2 atanh ceil clamp cos cosh cross degrees determinant distance dot ' +
+  'exp exp2 faceforward floor fma fract frexp inverse inversesqrt ldexp length log log2 max min mix mod modf ' +
+  'normalize pow radians reflect refract round roundEven saturate select sign sin sinh smoothstep sqrt step tan ' +
+  'tanh transpose trunc isnan isinf'
+).split(' '))
+function uniformExpr(expr: Expr, uniforms: Set<string>, helpers: Set<string>): boolean {
   let uniform = true
   walkExpr(expr, e => {
     if (e.kind === 'ident' && !['true', 'false'].includes(e.name) && !uniforms.has(e.name)) uniform = false
-    if (e.kind === 'call' && /^(?:texture|texelFetch|textureSample|textureLoad)/.test(e.callee)) uniform = false
+    if (e.kind === 'call' && (helpers.has(e.callee) || (!UNIFORM_BUILTINS.has(e.callee) &&
+      !/^(?:float|int|uint|bool|[biu]?vec[234]|mat[234](?:x[234])?|f16|[fiu]32|vec[234][fiub]|mat[234]x[234]f|(?:vec[234]|mat[234]x[234])<(?:f16|[fiu]32|bool)>|bitcast<[^>]+>)$/.test(e.callee)))) uniform = false
   })
   return uniform
 }
@@ -106,6 +115,7 @@ function expressions(stmt: Stmt): Expr[] {
 /** Conservatively lint GLSL/WGSL source. This tolerant, dependency-free checker is advisory, not a compiler. */
 export function checkShaderSource(source: string, language: ShaderCraftLanguage): ShaderSourceFinding[] {
   const tokens = tokenize(source, language), items = scanTopLevel(source, language, tokens)
+  const customFunctions = new Set(items.filter(item => item.kind === 'function').map(item => item.name!))
   const findings: ShaderSourceFinding[] = [], seen = new Set<string>()
   const add = (rule: ShaderSourceRule, severity: ShaderSourceFinding['severity'], tok: number, message: string) => {
     const line = tokens[tok]?.line ?? 1, key = `${rule}:${tok}`
@@ -113,9 +123,15 @@ export function checkShaderSource(source: string, language: ShaderCraftLanguage)
   }
   tokens.forEach((t, i) => {
     if (t.kind === 'directive') {
-      for (const ref of tokenize(t.text.slice(1), 'wgsl')) {
-        const replacement = CONTRACT[ref.text] ?? (/^iChannel\d+$/.test(ref.text) ? 'declare a texture input in the effect pass' : undefined)
-        if (replacement) add('shadertoy-contract', 'error', i, `Noisemaker: ${replacement}; ${ref.text} is not its shader contract.`)
+      // Check replacement text, not directive names, macro names/parameters or #if syntax. Mask rather than
+      // delete the prefix and continuation backslashes, so recursive findings retain physical source lines.
+      const head = /^#\s*define\s+[A-Za-z_]\w*(?:\([^)]*\))?/.exec(t.text)
+      if (head) {
+        const body = t.text.slice(0, head[0].length).replace(/[^\r\n]/g, ' ') + t.text.slice(head[0].length)
+        for (const finding of checkShaderSource(body.replace(/\\(?=\r?\n)/g, ' '), language)) {
+          const line = t.line + finding.line - 1, key = `${finding.rule}:macro:${i}:${line}`
+          if (!seen.has(key)) { seen.add(key); findings.push({ ...finding, line }) }
+        }
       }
     }
     if (t.kind === 'number' && /^43758\.5453(?:f|h)?$/.test(t.text)) add('sine-hash', 'error', i, 'The sine-hash multiplier 43758.5453 varies across GPUs; use the library PCG-based hash12, hash22 or hash33.')
@@ -167,8 +183,8 @@ export function checkShaderSource(source: string, language: ShaderCraftLanguage)
     const checkControlled = (branch: Expr) => walkExpr(branch, call => {
       if (call.kind === 'call' && (DERIVATIVES.test(call.callee) || derivativeFunctions.has(call.callee))) add('derivative-control-flow', 'warning', call.tok, 'Evaluate derivatives before non-uniform conditional expressions or short-circuit branches.')
     })
-    if (e.kind === 'ternary' && !uniformExpr(e.cond, uniforms)) { checkControlled(e.then); checkControlled(e.else) }
-    if (e.kind === 'binary' && ['&&', '||'].includes(e.op) && !uniformExpr(e.left, uniforms)) checkControlled(e.right)
+    if (e.kind === 'ternary' && !uniformExpr(e.cond, uniforms, customFunctions)) { checkControlled(e.then); checkControlled(e.else) }
+    if (e.kind === 'binary' && ['&&', '||'].includes(e.op) && !uniformExpr(e.left, uniforms, customFunctions)) checkControlled(e.right)
     if (language === 'glsl' && e.kind === 'binary' && ['+', '-', '*', '/', '%'].includes(e.op) &&
       ((intLiteral(e.left) && typeOf(e.right, types) === 'float') || (intLiteral(e.right) && typeOf(e.left, types) === 'float'))) {
       add('integer-float-mix', 'error', e.tok, 'GLSL float arithmetic needs float literals (for example 2.0 * PI), or an explicit float() conversion.')
@@ -211,7 +227,7 @@ export function checkShaderSource(source: string, language: ShaderCraftLanguage)
     walkStmts(body, (stmt, parents) => {
       const controls = ['for', 'while', 'loop'].includes(stmt.kind) ? [...parents, stmt] : parents
       const control = controls.some(p => ['for', 'while', 'loop'].includes(p.kind) ||
-        (p.kind === 'if' && !uniformExpr(p.cond, uniforms)) || (p.kind === 'switch' && !uniformExpr(p.selector, uniforms)))
+        (p.kind === 'if' && !uniformExpr(p.cond, uniforms, customFunctions)) || (p.kind === 'switch' && !uniformExpr(p.selector, uniforms, customFunctions)))
       expressions(stmt).forEach(expr => {
         checkExpr(expr, types, control, uniforms)
         walkExpr(expr, e => {
@@ -219,7 +235,7 @@ export function checkShaderSource(source: string, language: ShaderCraftLanguage)
             let target = e.target
             while (target.kind === 'member' || target.kind === 'index') target = target.object
             if (target.kind === 'ident') {
-              if (e.target.kind === 'ident' && !control && uniformExpr(e.value, uniforms)) uniforms.add(target.name)
+              if (e.target.kind === 'ident' && !control && uniformExpr(e.value, uniforms, customFunctions)) uniforms.add(target.name)
               else uniforms.delete(target.name)
             }
           }
@@ -228,7 +244,7 @@ export function checkShaderSource(source: string, language: ShaderCraftLanguage)
       if (stmt.kind === 'decl') for (const d of stmt.declarators) {
         const type = numericType(d.type) ?? (d.init ? typeOf(d.init, types) : undefined)
         if (type) types.set(d.name, type)
-        if (d.init && uniformExpr(d.init, uniforms)) uniforms.add(d.name)
+        if (d.init && uniformExpr(d.init, uniforms, customFunctions)) uniforms.add(d.name)
         else uniforms.delete(d.name)
       }
       if ((stmt.kind === 'for' || stmt.kind === 'while') && !bounded(stmt.cond)) add('unbounded-loop', 'warning', stmt.tok, 'Loop condition has no explicit comparison bound; use a bounded iteration count.')
