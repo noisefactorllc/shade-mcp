@@ -1,10 +1,15 @@
 import { ShaderKnowledgeDB } from './vector-db.js'
 import type { KnowledgeDocument, SearchResult } from './vector-db.js'
-import { expandQueryWithSynonyms, SEARCHABLE_KNOWLEDGE } from './shader-knowledge.js'
-import { SHADER_CRAFT_CATEGORY } from './shader-craft/index.js'
+import {
+  expandQueryWithSynonyms,
+  CURATED_KNOWLEDGE,
+  SEARCHABLE_KNOWLEDGE,
+  TECHNIQUE_SYNONYMS,
+} from './shader-knowledge.js'
 import { CRITICAL_RULES } from './innate-knowledge.js'
 
 let dbInstance: ShaderKnowledgeDB | null = null
+let curatedDbInstance: ShaderKnowledgeDB | null = null
 
 /**
  * Get the shader knowledge database singleton.
@@ -17,6 +22,21 @@ export function getShaderKnowledgeDB(): ShaderKnowledgeDB {
     dbInstance.buildIndex()
   }
   return dbInstance
+}
+
+/**
+ * retrieveForAgent's database: the curated notes alone. TF-IDF weights depend on
+ * the whole corpus, so sharing the searchable database would reorder and drop
+ * curated results whenever references are added. Shader-craft references are
+ * read on demand through searchShaderKnowledge, never injected into a prompt.
+ */
+function getCuratedKnowledgeDB(): ShaderKnowledgeDB {
+  if (!curatedDbInstance) {
+    curatedDbInstance = new ShaderKnowledgeDB()
+    curatedDbInstance.addDocuments(CURATED_KNOWLEDGE)
+    curatedDbInstance.buildIndex()
+  }
+  return curatedDbInstance
 }
 
 /**
@@ -81,10 +101,11 @@ export function retrieveForAgent(
   phase: 'generate' | 'fix',
   context: { technique?: string; error?: string } = {}
 ): string {
-  const db = getShaderKnowledgeDB()
+  const db = getCuratedKnowledgeDB()
   let result = CRITICAL_RULES[phase] || ''
 
-  const expandedQuery = expandQueryWithSynonyms(query)
+  // The technique synonyms only: the shader-craft ones would shift curated scores.
+  const expandedQuery = expandQueryWithSynonyms(query, TECHNIQUE_SYNONYMS)
   let searchQuery = expandedQuery
   if (context.technique) searchQuery += ` ${context.technique}`
   if (context.error) searchQuery += ` fix ${context.error}`
@@ -93,11 +114,7 @@ export function retrieveForAgent(
     ? { effect: 1.5, glsl: 1.3, technique: 1.2 } as Record<string, number>
     : { errors: 1.5, documentation: 1.2, glsl: 1.1 } as Record<string, number>
 
-  // Shader-craft references are read on demand through searchShaderKnowledge,
-  // never injected into a prompt unasked, so they are left out here.
-  const rawResults = db.search(searchQuery, { limit: Number.MAX_SAFE_INTEGER, minScore: 0.03 })
-    .filter(r => r.category !== SHADER_CRAFT_CATEGORY)
-    .slice(0, 8)
+  const rawResults = db.search(searchQuery, { limit: 8, minScore: 0.03 })
 
   const boostedResults = rawResults
     .map(r => ({ ...r, boostedScore: r.score * (categoryBoosts[r.category] || 1.0) }))

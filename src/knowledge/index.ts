@@ -10,7 +10,14 @@ export type { KnowledgeDocument, SearchResult, SearchOptions } from './vector-db
 export { getSharedEffectIndex, invalidateSharedEffectIndex } from './shared-instances.js'
 
 // Query utilities
-export { expandQueryWithSynonyms, TECHNIQUE_SYNONYMS, CURATED_KNOWLEDGE, SEARCHABLE_KNOWLEDGE } from './shader-knowledge.js'
+export {
+  expandQueryWithSynonyms,
+  TECHNIQUE_SYNONYMS,
+  SHADER_CRAFT_SYNONYMS,
+  SEARCH_SYNONYMS,
+  CURATED_KNOWLEDGE,
+  SEARCHABLE_KNOWLEDGE,
+} from './shader-knowledge.js'
 
 // Search functions
 export {

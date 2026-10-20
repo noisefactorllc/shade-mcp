@@ -29,9 +29,16 @@ export const TECHNIQUE_SYNONYMS: Record<string, string[]> = {
   rainbow: ['spectrum', 'hsv rotation', 'hue cycle', 'chromatic'],
   filter: ['post-process', 'image effect', 'inputTex', 'texture'],
   synth: ['generator', 'procedural', 'synthesizer'],
-  // Shader-craft terms. The search has no stemming and matches keys and
-  // synonyms as substrings, so these bridge spellings and plurals, and avoid
-  // short words that hide inside others ("aces" in "spaces", "sea" in "search").
+}
+
+/**
+ * Synonyms for the shader-craft references. They join TECHNIQUE_SYNONYMS only
+ * on the searchShaderKnowledge path (SEARCH_SYNONYMS), so retrieveForAgent's
+ * expansion stays as it was. The search has no stemming and matches keys and
+ * synonyms as substrings, so these bridge spellings and plurals, and avoid
+ * short words that hide inside others ("aces" in "spaces", "sea" in "search").
+ */
+export const SHADER_CRAFT_SYNONYMS: Record<string, string[]> = {
   tonemap: ['tone mapping', 'tonemapping', 'tonemapper', 'agx', 'exposure', 'hdr'],
   gamma: ['srgb', 'linear', 'lineartosrgb', 'srgbtolinear'],
   colour: ['color'],
@@ -49,10 +56,16 @@ export const TECHNIQUE_SYNONYMS: Record<string, string[]> = {
   character: ['characters', 'creatures', 'creature', 'bilobed'],
 }
 
-export function expandQueryWithSynonyms(query: string): string {
+/** The synonyms searchShaderKnowledge expands with: the technique synonyms plus the shader-craft ones. */
+export const SEARCH_SYNONYMS: Record<string, string[]> = { ...TECHNIQUE_SYNONYMS, ...SHADER_CRAFT_SYNONYMS }
+
+export function expandQueryWithSynonyms(
+  query: string,
+  synonymTable: Record<string, string[]> = SEARCH_SYNONYMS,
+): string {
   const lower = query.toLowerCase()
   const expanded = [query]
-  for (const [key, synonyms] of Object.entries(TECHNIQUE_SYNONYMS)) {
+  for (const [key, synonyms] of Object.entries(synonymTable)) {
     if (lower.includes(key)) {
       expanded.push(...synonyms)
     }
