@@ -10,7 +10,7 @@ export type { KnowledgeDocument, SearchResult, SearchOptions } from './vector-db
 export { getSharedEffectIndex, invalidateSharedEffectIndex } from './shared-instances.js'
 
 // Query utilities
-export { expandQueryWithSynonyms, TECHNIQUE_SYNONYMS, CURATED_KNOWLEDGE } from './shader-knowledge.js'
+export { expandQueryWithSynonyms, TECHNIQUE_SYNONYMS, CURATED_KNOWLEDGE, SEARCHABLE_KNOWLEDGE } from './shader-knowledge.js'
 
 // Search functions
 export {
@@ -55,3 +55,19 @@ export {
   DSL_GENERATE_KNOWLEDGE,
   DSL_FIX_KNOWLEDGE,
 } from './state-bundles.js'
+
+// Shader craft: workflow, references, provenance, credits and the upstream licence
+export {
+  SHADER_CRAFT_CATEGORY,
+  SHADER_CRAFT_WORKFLOW,
+  SHADER_CRAFT_VIDEO_TO_EFFECT,
+  SHADER_CRAFT_DOCUMENTS,
+  SHADER_CRAFT_PROVENANCE,
+  SHADER_CRAFT_CREDITS,
+  SHADER_CRAFT_LICENSE,
+} from './shader-craft/index.js'
+export type {
+  ShaderCraftProvenance,
+  ShaderCraftCredits,
+  ShaderCraftTechniqueCredit,
+} from './shader-craft/index.js'

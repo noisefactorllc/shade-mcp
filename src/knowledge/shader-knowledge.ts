@@ -1,4 +1,5 @@
 import type { KnowledgeDocument } from './vector-db.js'
+import { SHADER_CRAFT_DOCUMENTS } from './shader-craft/index.js'
 
 export const TECHNIQUE_SYNONYMS: Record<string, string[]> = {
   noise: ['perlin', 'simplex', 'value noise', 'fbm', 'fractal', 'organic', 'procedural'],
@@ -28,6 +29,24 @@ export const TECHNIQUE_SYNONYMS: Record<string, string[]> = {
   rainbow: ['spectrum', 'hsv rotation', 'hue cycle', 'chromatic'],
   filter: ['post-process', 'image effect', 'inputTex', 'texture'],
   synth: ['generator', 'procedural', 'synthesizer'],
+  // Shader-craft terms. The search has no stemming and matches keys and
+  // synonyms as substrings, so these bridge spellings and plurals, and avoid
+  // short words that hide inside others ("aces" in "spaces", "sea" in "search").
+  tonemap: ['tone mapping', 'tonemapping', 'tonemapper', 'agx', 'exposure', 'hdr'],
+  gamma: ['srgb', 'linear', 'lineartosrgb', 'srgbtolinear'],
+  colour: ['color'],
+  raymarch: ['raymarching', 'sphere tracing', 'sdf', 'step count'],
+  'debug view': ['debug_mode', 'debugmode', 'debug views', 'step count', 'contours'],
+  cloud: ['clouds', 'volumetric', 'cumulus', 'beer powder', 'scattering'],
+  volumetric: ['volume', 'volumes', 'fog', 'smoke', 'scattering', 'participating media'],
+  terrain: ['heightfield', 'landscape', 'mountains', 'valley', 'erosion'],
+  mountain: ['mountains', 'terrain', 'ridged', 'heightfield'],
+  landscape: ['landscapes', 'terrain', 'heightfield', 'mountains'],
+  water: ['ocean', 'coast', 'coastal', 'shoreline', 'foam', 'underwater'],
+  architecture: ['buildings', 'facade', 'skyscraper', 'massing', 'parcel'],
+  hash: ['pcg', 'random', 'hash12', 'integer hash'],
+  video: ['reference video', 'footage', 'video clip', 'reference clip'],
+  character: ['characters', 'creatures', 'creature', 'bilobed'],
 }
 
 export function expandQueryWithSynonyms(query: string): string {
@@ -133,3 +152,10 @@ export const CURATED_KNOWLEDGE: KnowledgeDocument[] = [
     tags: ['errors', 'debug', 'troubleshooting', 'fix'],
   },
 ]
+
+/**
+ * Everything searchShaderKnowledge indexes: the curated notes above plus the
+ * shader-craft references. Both the MCP tool's database and the exported one
+ * that Shade vendors are built from this list.
+ */
+export const SEARCHABLE_KNOWLEDGE: KnowledgeDocument[] = [...CURATED_KNOWLEDGE, ...SHADER_CRAFT_DOCUMENTS]

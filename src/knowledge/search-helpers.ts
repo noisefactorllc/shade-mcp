@@ -1,18 +1,19 @@
 import { ShaderKnowledgeDB } from './vector-db.js'
 import type { KnowledgeDocument, SearchResult } from './vector-db.js'
-import { expandQueryWithSynonyms, CURATED_KNOWLEDGE } from './shader-knowledge.js'
+import { expandQueryWithSynonyms, SEARCHABLE_KNOWLEDGE } from './shader-knowledge.js'
+import { SHADER_CRAFT_CATEGORY } from './shader-craft/index.js'
 import { CRITICAL_RULES } from './innate-knowledge.js'
 
 let dbInstance: ShaderKnowledgeDB | null = null
 
 /**
  * Get the shader knowledge database singleton.
- * Initializes from curated knowledge on first call.
+ * Initializes from the curated knowledge and the shader-craft references on first call.
  */
 export function getShaderKnowledgeDB(): ShaderKnowledgeDB {
   if (!dbInstance) {
     dbInstance = new ShaderKnowledgeDB()
-    dbInstance.addDocuments(CURATED_KNOWLEDGE)
+    dbInstance.addDocuments(SEARCHABLE_KNOWLEDGE)
     dbInstance.buildIndex()
   }
   return dbInstance
@@ -92,7 +93,11 @@ export function retrieveForAgent(
     ? { effect: 1.5, glsl: 1.3, technique: 1.2 } as Record<string, number>
     : { errors: 1.5, documentation: 1.2, glsl: 1.1 } as Record<string, number>
 
-  const rawResults = db.search(searchQuery, { limit: 8, minScore: 0.03 })
+  // Shader-craft references are read on demand through searchShaderKnowledge,
+  // never injected into a prompt unasked, so they are left out here.
+  const rawResults = db.search(searchQuery, { limit: Number.MAX_SAFE_INTEGER, minScore: 0.03 })
+    .filter(r => r.category !== SHADER_CRAFT_CATEGORY)
+    .slice(0, 8)
 
   const boostedResults = rawResults
     .map(r => ({ ...r, boostedScore: r.score * (categoryBoosts[r.category] || 1.0) }))
