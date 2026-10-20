@@ -579,8 +579,10 @@ function bundledProbes() {
       glsl: 'vec3 ro = vec3(0.0, 0.0, -3.0); vec3 rd = normalize(vec3(uv * 0.2, 1.0)); vec3 hit = raymarch(ro, rd, 0.0, 10.0, 1.0); float value = hit.x + dot(calcNormal(ro + rd * hit.x, 0.001), vec3(0.02, 0.03, 0.04));',
       wgsl: 'let ro = vec3f(0.0, 0.0, -3.0); let rd = normalize(vec3f(uv * 0.2, 1.0)); let hit = raymarch(ro, rd, 0.0, 10.0, 1.0); let value = hit.x + dot(calcNormal(ro + rd * hit.x, 0.001), vec3f(0.02, 0.03, 0.04));' },
     { id: 'sdf-2d',
-      glsl: 'float value = smoothstep(-0.1, 0.1, sdBox(uv, vec2(0.4, 0.25)));',
-      wgsl: 'let value = smoothstep(-0.1, 0.1, sdBox_f2f2(uv, vec2f(0.4, 0.25)));' },
+      // Binary-exact edges avoid testing backend-specific smoothstep reciprocal rounding.
+      // Keep the full distance field, including the box corners, and the zero-tolerance comparison.
+      glsl: 'float value = smoothstep(-0.125, 0.125, sdBox(uv, vec2(0.375, 0.25)));',
+      wgsl: 'let value = smoothstep(-0.125, 0.125, sdBox_f2f2(uv, vec2f(0.375, 0.25)));' },
     { id: 'cloud-volume',
       glsl: 'vec3 radiance = vec3(0.0); vec3 transmittance = vec3(1.0); for (int i=0; i<8; i++) { float density = max(fbm(vec3(uv, float(i) * 0.1), 3, 2.0, 0.5), 0.0) + 0.1; volumeStep(radiance, transmittance, vec3(density), vec3(0.5, 0.7, 0.9) * beerPowder(density), 0.125); } float value = dot(radiance, vec3(0.2, 0.3, 0.5)) + transmittance.x;',
       wgsl: 'var radiance = vec3f(0.0); var transmittance = vec3f(1.0); for (var i=0; i<8; i++) { let density = max(fbm_f3iff(vec3f(uv, f32(i) * 0.1), 3, 2.0, 0.5), 0.0) + 0.1; volumeStep(&radiance, &transmittance, vec3f(density), vec3f(0.5, 0.7, 0.9) * beerPowder(density), 0.125); } let value = dot(radiance, vec3f(0.2, 0.3, 0.5)) + transmittance.x;' },

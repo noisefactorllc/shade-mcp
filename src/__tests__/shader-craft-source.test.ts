@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest'
-import { readFile } from 'node:fs/promises'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { readFile, mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import {
   checkShaderSource, bundleShaderSource, searchShaderLibrary,
   SHADER_CRAFT_LIBRARY as library, SHADER_CRAFT_LIBRARY_MODULES as modules,
@@ -125,22 +128,38 @@ it('searches language-specific names and metadata with bounded results', () => {
   expect(searchShaderLibrary('noise', { limit: 0 })).toEqual([])
 })
 
-it('exports the pure APIs from the built knowledge drop without Node imports in their modules', async () => {
-  const built = await import('../../dist/knowledge/index.js')
-  for (const name of ['checkShaderSource', 'bundleShaderSource', 'searchShaderLibrary'] as const) expect(typeof built[name]).toBe('function')
-  expect(built.checkShaderSource('round(x)', 'glsl')[0].rule).toBe('round')
-  expect(built.bundleShaderSource('tonemapAgX(vec3(1.0));', 'glsl').added).toContain('tonemapAgX(vec3)')
-  for (const file of ['checker', 'bundler', 'source', 'search-library']) {
-    expect(await readFile(new URL(`../knowledge/shader-craft/${file}.ts`, import.meta.url), 'utf8')).not.toMatch(/(?:from\s*|import\s*\()['"](?:node:|fs|path)/)
-  }
-})
+describe('built shader-craft APIs', () => {
+  let outDir: string
+  let built: typeof import('../knowledge/index.js')
+  let browser: typeof import('../knowledge/shader-craft.js')
+  beforeAll(async () => {
+    // The source-only quality job deliberately has no dist/. Build the two release entries in isolation.
+    const { build } = await import('tsup')
+    const { default: config } = await import('../../tsup.config.js')
+    outDir = await mkdtemp(join(tmpdir(), 'shade-craft-apis-'))
+    await build({ ...(config as object), entry: {
+      'knowledge/index': 'src/knowledge/index.ts',
+      'knowledge/shader-craft': 'src/knowledge/shader-craft.ts',
+    }, outDir, clean: false, sourcemap: false, silent: true, config: false })
+    built = await import(pathToFileURL(join(outDir, 'knowledge/index.js')).href)
+    browser = await import(pathToFileURL(join(outDir, 'knowledge/shader-craft.js')).href)
+  }, 60000)
+  afterAll(async () => { if (outDir) await rm(outDir, { recursive: true, force: true }) })
 
+  it('exports the pure APIs from the built knowledge drop without Node imports in their modules', async () => {
+    for (const name of ['checkShaderSource', 'bundleShaderSource', 'searchShaderLibrary'] as const) expect(typeof built[name]).toBe('function')
+    expect(built.checkShaderSource('round(x)', 'glsl')[0].rule).toBe('round')
+    expect(built.bundleShaderSource('tonemapAgX(vec3(1.0));', 'glsl').added).toContain('tonemapAgX(vec3)')
+    for (const file of ['checker', 'bundler', 'source', 'search-library']) {
+      expect(await readFile(new URL(`../knowledge/shader-craft/${file}.ts`, import.meta.url), 'utf8')).not.toMatch(/(?:from\s*|import\s*\()['"](?:node:|fs|path)/)
+    }
+  })
 
-it('ships a browser entry with no imports, sharing the aggregate API', async () => {
-  const browser = await import('../../dist/knowledge/shader-craft.js')
-  expect(browser.bundleShaderSource('tonemapAgX(vec3(1.0));', 'glsl')).toEqual(bundleShaderSource('tonemapAgX(vec3(1.0));', 'glsl'))
-  const source = await readFile(new URL('../../dist/knowledge/shader-craft.js', import.meta.url), 'utf8')
-  expect(source).not.toMatch(/^import\s|\bimport\(/m)
+  it('ships a browser entry with no imports, sharing the aggregate API', async () => {
+    expect(browser.bundleShaderSource('tonemapAgX(vec3(1.0));', 'glsl')).toEqual(bundleShaderSource('tonemapAgX(vec3(1.0));', 'glsl'))
+    const source = await readFile(join(outDir, 'knowledge/shader-craft.js'), 'utf8')
+    expect(source).not.toMatch(/^import\s|\bimport\(/m)
+  })
 })
 
 for (const lang of languages) it(`handles split hashes, explicit nonzero vectors and divergent helper calls in ${lang}`, () => {
