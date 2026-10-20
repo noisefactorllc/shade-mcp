@@ -356,6 +356,13 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     credits: ['simplex-noise', 'flow-noise'],
     glsl: { name: 'simplexNoiseD', signature: 'vec3 simplexNoiseD(vec2 p, float rotation)', dependencies: ['rot2(float)', 'latticeGradient(vec2)'], requires: [] },
     wgsl: { name: 'simplexNoiseD_f2f', signature: 'fn simplexNoiseD_f2f(p: vec2f, rotation: f32) -> vec3f', dependencies: ['rot2(float)', 'latticeGradient(vec2)'], requires: [] },
+    parity: {
+      tolerance: 9.5367431640625e-07,
+      measured: [
+        { renderer: 'Apple M4 GPU on macOS (Metal, through ANGLE and Dawn)', difference: 7.450580596923828e-07 },
+      ],
+      reason: 'Apple\'s Metal compiler rounds these operations differently in the last bits for the WebGL2 (ANGLE) and WebGPU (Dawn) translations, and the rounding moves with the surrounding code on both backends; the GLSL and WGSL perform the same operations in the same order, and SwiftShader renders identical words.',
+    },
   },
   {
     id: 'simplexNoiseD(vec2)',
@@ -401,6 +408,13 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     credits: ['quilez-articles', 'perlin-improved-noise'],
     glsl: { name: 'gradientNoiseD', signature: 'vec4 gradientNoiseD(vec3 p)', dependencies: ['hash33(vec3)', 'quinticFade(vec3)', 'quinticFadeDeriv(vec3)'], requires: [] },
     wgsl: { name: 'gradientNoiseD_f3', signature: 'fn gradientNoiseD_f3(p: vec3f) -> vec4f', dependencies: ['hash33(vec3)', 'quinticFade(vec3)', 'quinticFadeDeriv(vec3)'], requires: [] },
+    parity: {
+      tolerance: 4.76837158203125e-07,
+      measured: [
+        { renderer: 'Apple M4 GPU on macOS (Metal, through ANGLE and Dawn)', difference: 4.172325134277344e-07 },
+      ],
+      reason: 'Apple\'s Metal compiler rounds these operations differently in the last bits for the WebGL2 (ANGLE) and WebGPU (Dawn) translations, and the rounding moves with the surrounding code on both backends; the GLSL and WGSL perform the same operations in the same order, and SwiftShader renders identical words.',
+    },
   },
   {
     id: 'FBM_MAX_OCTAVES',
@@ -518,6 +532,13 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     credits: ['curl-noise'],
     glsl: { name: 'curlNoise', signature: 'vec3 curlNoise(vec3 p)', dependencies: ['gradientNoiseD(vec3)'], requires: [] },
     wgsl: { name: 'curlNoise_f3', signature: 'fn curlNoise_f3(p: vec3f) -> vec3f', dependencies: ['gradientNoiseD(vec3)'], requires: [] },
+    parity: {
+      tolerance: 4.76837158203125e-07,
+      measured: [
+        { renderer: 'Apple M4 GPU on macOS (Metal, through ANGLE and Dawn)', difference: 2.980232238769531e-07 },
+      ],
+      reason: 'Apple\'s Metal compiler rounds these operations differently in the last bits for the WebGL2 (ANGLE) and WebGPU (Dawn) translations, and the rounding moves with the surrounding code on both backends; the GLSL and WGSL perform the same operations in the same order, and SwiftShader renders identical words.',
+    },
   },
   {
     id: 'voronoi(vec2,float)',
@@ -554,6 +575,13 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     credits: ['hybrid-terrain', 'book-of-shaders'],
     glsl: { name: 'hybridTerrainHeight', signature: 'float hybridTerrainHeight(vec2 p, int octaves)', dependencies: ['FBM_MAX_OCTAVES', 'fbm(vec2,int)', 'ridgedFbm(vec2,int)', 'voronoi(vec2,float)'], requires: [] },
     wgsl: { name: 'hybridTerrainHeight', signature: 'fn hybridTerrainHeight(p: vec2f, octaves: i32) -> f32', dependencies: ['FBM_MAX_OCTAVES', 'fbm(vec2,int)', 'ridgedFbm(vec2,int)', 'voronoi(vec2,float)'], requires: [] },
+    parity: {
+      tolerance: 1.1920928955078125e-07,
+      measured: [
+        { renderer: 'Apple M4 GPU on macOS (Metal, through ANGLE and Dawn)', difference: 1.1920928955078125e-07 },
+      ],
+      reason: 'Apple\'s Metal compiler rounds these operations differently in the last bits for the WebGL2 (ANGLE) and WebGPU (Dawn) translations, and the rounding moves with the surrounding code on both backends; the GLSL and WGSL perform the same operations in the same order, and SwiftShader renders identical words.',
+    },
   },
   {
     id: 'interleavedGradientNoise(vec2)',
@@ -824,6 +852,13 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     credits: ['quilez-articles'],
     glsl: { name: 'sdOctahedron', signature: 'float sdOctahedron(vec3 p, float s)', dependencies: [], requires: [] },
     wgsl: { name: 'sdOctahedron', signature: 'fn sdOctahedron(p: vec3f, s: f32) -> f32', dependencies: [], requires: [] },
+    parity: {
+      tolerance: 9.5367431640625e-07,
+      measured: [
+        { renderer: 'Apple M4 GPU on macOS (Metal, through ANGLE and Dawn)', difference: 5.513429641723633e-07 },
+      ],
+      reason: 'Apple\'s Metal compiler rounds these operations differently in the last bits for the WebGL2 (ANGLE) and WebGPU (Dawn) translations, and the rounding moves with the surrounding code on both backends; the GLSL and WGSL perform the same operations in the same order, and SwiftShader renders identical words.',
+    },
   },
   {
     id: 'sdGyroid(vec3,float,float)',
@@ -854,6 +889,13 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     credits: ['quilez-articles'],
     glsl: { name: 'sdDeathStar', signature: 'float sdDeathStar(vec3 p, float ra, float rb, float d)', dependencies: [], requires: [] },
     wgsl: { name: 'sdDeathStar', signature: 'fn sdDeathStar(p: vec3f, ra: f32, rb: f32, d: f32) -> f32', dependencies: [], requires: [] },
+    parity: {
+      tolerance: 2.384185791015625e-07,
+      measured: [
+        { renderer: 'Apple M4 GPU on macOS (Metal, through ANGLE and Dawn)', difference: 2.2556474080242851e-07 },
+      ],
+      reason: 'Apple\'s Metal compiler rounds these operations differently in the last bits for the WebGL2 (ANGLE) and WebGPU (Dawn) translations, and the rounding moves with the surrounding code on both backends; the GLSL and WGSL perform the same operations in the same order, and SwiftShader renders identical words.',
+    },
   },
   {
     id: 'sdQuadraticBezier(vec3,vec3,vec3,vec3)',
@@ -1054,6 +1096,13 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     credits: ['quilez-articles'],
     glsl: { name: 'sdParabolaSegment', signature: 'float sdParabolaSegment(vec2 p, float w, float h)', dependencies: [], requires: [] },
     wgsl: { name: 'sdParabolaSegment', signature: 'fn sdParabolaSegment(p: vec2f, w: f32, h: f32) -> f32', dependencies: [], requires: [] },
+    parity: {
+      tolerance: 5.960464477539063e-08,
+      measured: [
+        { renderer: 'Apple M4 GPU on macOS (Metal, through ANGLE and Dawn)', difference: 5.960464477539063e-08 },
+      ],
+      reason: 'Apple\'s Metal compiler rounds these operations differently in the last bits for the WebGL2 (ANGLE) and WebGPU (Dawn) translations, and the rounding moves with the surrounding code on both backends; the GLSL and WGSL perform the same operations in the same order, and SwiftShader renders identical words.',
+    },
   },
   {
     id: 'sdEgg(vec2,float,float)',
@@ -1174,6 +1223,13 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     credits: ['hg-sdf'],
     glsl: { name: 'opEngrave', signature: 'float opEngrave(float a, float b, float r)', dependencies: [], requires: [] },
     wgsl: { name: 'opEngrave', signature: 'fn opEngrave(a: f32, b: f32, r: f32) -> f32', dependencies: [], requires: [] },
+    parity: {
+      tolerance: 1.9073486328125e-06,
+      measured: [
+        { renderer: 'Apple M4 GPU on macOS (Metal, through ANGLE and Dawn)', difference: 1.0234334418021162e-06 },
+      ],
+      reason: 'Apple\'s Metal compiler rounds these operations differently in the last bits for the WebGL2 (ANGLE) and WebGPU (Dawn) translations, and the rounding moves with the surrounding code on both backends; the GLSL and WGSL perform the same operations in the same order, and SwiftShader renders identical words.',
+    },
   },
   {
     id: 'opRound(float,float)',
@@ -1494,6 +1550,13 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     credits: ['shader-skills'],
     glsl: { name: 'cameraRay', signature: 'vec3 cameraRay(mat3 cam, vec2 uv, float focal)', dependencies: [], requires: [] },
     wgsl: { name: 'cameraRay', signature: 'fn cameraRay(cam: mat3x3f, uv: vec2f, focal: f32) -> vec3f', dependencies: [], requires: [] },
+    parity: {
+      tolerance: 2.384185791015625e-07,
+      measured: [
+        { renderer: 'Apple M4 GPU on macOS (Metal, through ANGLE and Dawn)', difference: 1.7881393432617188e-07 },
+      ],
+      reason: 'Apple\'s Metal compiler rounds these operations differently in the last bits for the WebGL2 (ANGLE) and WebGPU (Dawn) translations, and the rounding moves with the surrounding code on both backends; the GLSL and WGSL perform the same operations in the same order, and SwiftShader renders identical words.',
+    },
   },
   {
     id: 'thinLensRay(mat3,vec2,float,float,float,vec2,vec3,vec3)',
@@ -1503,6 +1566,13 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     credits: ['shader-skills'],
     glsl: { name: 'thinLensRay', signature: 'void thinLensRay(mat3 cam, vec2 uv, float focal, float aperture, float focusDist, vec2 xi, inout vec3 ro, out vec3 rd)', dependencies: ['TAU'], requires: [] },
     wgsl: { name: 'thinLensRay', signature: 'fn thinLensRay(cam: mat3x3f, uv: vec2f, focal: f32, aperture: f32, focusDist: f32, xi: vec2f, ro: ptr<function, vec3f>, rd: ptr<function, vec3f>)', dependencies: ['TAU'], requires: [] },
+    parity: {
+      tolerance: 2.384185791015625e-07,
+      measured: [
+        { renderer: 'Apple M4 GPU on macOS (Metal, through ANGLE and Dawn)', difference: 2.384185791015625e-07 },
+      ],
+      reason: 'Apple\'s Metal compiler rounds these operations differently in the last bits for the WebGL2 (ANGLE) and WebGPU (Dawn) translations, and the rounding moves with the surrounding code on both backends; the GLSL and WGSL perform the same operations in the same order, and SwiftShader renders identical words.',
+    },
   },
   {
     id: 'orthoRay(mat3,vec2,float,vec3,vec3)',
@@ -1512,6 +1582,13 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     credits: ['shader-skills'],
     glsl: { name: 'orthoRay', signature: 'void orthoRay(mat3 cam, vec2 uv, float size, inout vec3 ro, out vec3 rd)', dependencies: [], requires: [] },
     wgsl: { name: 'orthoRay', signature: 'fn orthoRay(cam: mat3x3f, uv: vec2f, size: f32, ro: ptr<function, vec3f>, rd: ptr<function, vec3f>)', dependencies: [], requires: [] },
+    parity: {
+      tolerance: 9.5367431640625e-07,
+      measured: [
+        { renderer: 'Apple M4 GPU on macOS (Metal, through ANGLE and Dawn)', difference: 6.611226126551628e-07 },
+      ],
+      reason: 'Apple\'s Metal compiler rounds these operations differently in the last bits for the WebGL2 (ANGLE) and WebGPU (Dawn) translations, and the rounding moves with the surrounding code on both backends; the GLSL and WGSL perform the same operations in the same order, and SwiftShader renders identical words.',
+    },
   },
   {
     id: 'fresnelSchlick(float,vec3)',
@@ -1548,6 +1625,13 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     credits: ['filament-brdf'],
     glsl: { name: 'specularGGX', signature: 'vec3 specularGGX(vec3 n, vec3 v, vec3 l, float roughness, vec3 f0)', dependencies: ['PI', 'fresnelSchlick(float,vec3)', 'distributionGGX(float,float)', 'visibilitySmithGGX(float,float,float)'], requires: [] },
     wgsl: { name: 'specularGGX', signature: 'fn specularGGX(n: vec3f, v: vec3f, l: vec3f, roughness: f32, f0: vec3f) -> vec3f', dependencies: ['PI', 'fresnelSchlick(float,vec3)', 'distributionGGX(float,float)', 'visibilitySmithGGX(float,float,float)'], requires: [] },
+    parity: {
+      tolerance: 4.76837158203125e-07,
+      measured: [
+        { renderer: 'Apple M4 GPU on macOS (Metal, through ANGLE and Dawn)', difference: 2.650584100382921e-07 },
+      ],
+      reason: 'Apple\'s Metal compiler rounds these operations differently in the last bits for the WebGL2 (ANGLE) and WebGPU (Dawn) translations, and the rounding moves with the surrounding code on both backends; the GLSL and WGSL perform the same operations in the same order, and SwiftShader renders identical words.',
+    },
   },
   {
     id: 'shadePBR(vec3,vec3,vec3,vec3,float,float)',
@@ -1557,6 +1641,13 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     credits: ['filament-brdf'],
     glsl: { name: 'shadePBR', signature: 'vec3 shadePBR(vec3 n, vec3 v, vec3 l, vec3 albedo, float roughness, float metallic)', dependencies: ['fresnelSchlick(float,vec3)', 'specularGGX(vec3,vec3,vec3,float,vec3)'], requires: [] },
     wgsl: { name: 'shadePBR', signature: 'fn shadePBR(n: vec3f, v: vec3f, l: vec3f, albedo: vec3f, roughness: f32, metallic: f32) -> vec3f', dependencies: ['fresnelSchlick(float,vec3)', 'specularGGX(vec3,vec3,vec3,float,vec3)'], requires: [] },
+    parity: {
+      tolerance: 2.384185791015625e-07,
+      measured: [
+        { renderer: 'Apple M4 GPU on macOS (Metal, through ANGLE and Dawn)', difference: 2.088933633847326e-07 },
+      ],
+      reason: 'Apple\'s Metal compiler rounds these operations differently in the last bits for the WebGL2 (ANGLE) and WebGPU (Dawn) translations, and the rounding moves with the surrounding code on both backends; the GLSL and WGSL perform the same operations in the same order, and SwiftShader renders identical words.',
+    },
   },
   {
     id: 'envBRDFApprox(vec3,float,float)',
@@ -1611,6 +1702,13 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     credits: ['wave-dispersion'],
     glsl: { name: 'waterDispersion', signature: 'float waterDispersion(float k, float depth, float gravity)', dependencies: [], requires: [] },
     wgsl: { name: 'waterDispersion', signature: 'fn waterDispersion(k: f32, depth: f32, gravity: f32) -> f32', dependencies: [], requires: [] },
+    parity: {
+      tolerance: 2.384185791015625e-07,
+      measured: [
+        { renderer: 'Apple M4 GPU on macOS (Metal, through ANGLE and Dawn)', difference: 1.8774667566348737e-07 },
+      ],
+      reason: 'Apple\'s Metal compiler rounds these operations differently in the last bits for the WebGL2 (ANGLE) and WebGPU (Dawn) translations, and the rounding moves with the surrounding code on both backends; the GLSL and WGSL perform the same operations in the same order, and SwiftShader renders identical words.',
+    },
   },
   {
     id: 'waterWaveD(vec2,float,vec2,float,float,float,float)',
@@ -1620,6 +1718,15 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     credits: ['finch-water', 'wave-dispersion'],
     glsl: { name: 'waterWaveD', signature: 'vec4 waterWaveD(vec2 xz, float time, vec2 direction, float wavelength, float amplitude, float depth, float footprint)', dependencies: ['TAU', 'waterDispersion(float,float,float)'], requires: [] },
     wgsl: { name: 'waterWaveD', signature: 'fn waterWaveD(xz: vec2f, time: f32, direction: vec2f, wavelength: f32, amplitude: f32, depth: f32, footprint: f32) -> vec4f', dependencies: ['TAU', 'waterDispersion(float,float,float)'], requires: [] },
+    parity: {
+      tolerance: 2.384185791015625e-07,
+      measured: [
+        { renderer: 'Apple M4 GPU on macOS (Metal, through ANGLE and Dawn)', difference: 1.4719132819346122e-07 },
+        { renderer: 'SwiftShader LLVM JIT on arm64 macOS', difference: 1.0770577754254836e-07 },
+        { renderer: 'SwiftShader Subzero JIT on x86-64 (macOS, Rosetta)', difference: 1.0770577754254836e-07 },
+      ],
+      reason: 'Apple\'s Metal compiler rounds these operations differently in the last bits for the WebGL2 (ANGLE) and WebGPU (Dawn) translations, and SwiftShader evaluates its constant-edge smoothstep differently in the two; the GLSL and WGSL perform the same operations in the same order.',
+    },
   },
   {
     id: 'fresnelDielectric(float,float,float)',
@@ -1737,6 +1844,13 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     credits: ['agx'],
     glsl: { name: 'tonemapAgX', signature: 'vec3 tonemapAgX(vec3 c)', dependencies: [], requires: [] },
     wgsl: { name: 'tonemapAgX', signature: 'fn tonemapAgX(c: vec3f) -> vec3f', dependencies: [], requires: [] },
+    parity: {
+      tolerance: 7.62939453125e-06,
+      measured: [
+        { renderer: 'Apple M4 GPU on macOS (Metal, through ANGLE and Dawn)', difference: 6.198883056640625e-06 },
+      ],
+      reason: 'Apple\'s Metal compiler rounds these operations differently in the last bits for the WebGL2 (ANGLE) and WebGPU (Dawn) translations, and the rounding moves with the surrounding code on both backends, which log2 and pow then amplify; the GLSL and WGSL perform the same operations in the same order, and SwiftShader renders identical words.',
+    },
   },
   {
     id: 'tonemapAgXPunchy(vec3)',
@@ -1746,6 +1860,13 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     credits: ['agx'],
     glsl: { name: 'tonemapAgXPunchy', signature: 'vec3 tonemapAgXPunchy(vec3 c)', dependencies: [], requires: [] },
     wgsl: { name: 'tonemapAgXPunchy', signature: 'fn tonemapAgXPunchy(c: vec3f) -> vec3f', dependencies: [], requires: [] },
+    parity: {
+      tolerance: 1.52587890625e-05,
+      measured: [
+        { renderer: 'Apple M4 GPU on macOS (Metal, through ANGLE and Dawn)', difference: 9.775161743164062e-06 },
+      ],
+      reason: 'Apple\'s Metal compiler rounds these operations differently in the last bits for the WebGL2 (ANGLE) and WebGPU (Dawn) translations, and the rounding moves with the surrounding code on both backends, which log2 and pow then amplify; the GLSL and WGSL perform the same operations in the same order, and SwiftShader renders identical words.',
+    },
   },
   {
     id: 'tonemapNeutral(vec3)',
@@ -1863,6 +1984,14 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     credits: ['shader-skills'],
     glsl: { name: 'simpleSky', signature: 'vec3 simpleSky(vec3 rd, vec3 sunDir)', dependencies: [], requires: [] },
     wgsl: { name: 'simpleSky', signature: 'fn simpleSky(rd: vec3f, sunDir: vec3f) -> vec3f', dependencies: [], requires: [] },
+    parity: {
+      tolerance: 5.960464477539063e-08,
+      measured: [
+        { renderer: 'SwiftShader LLVM JIT on arm64 macOS', difference: 5.960464477539063e-08 },
+        { renderer: 'SwiftShader Subzero JIT on x86-64 (macOS, Rosetta)', difference: 5.960464477539063e-08 },
+      ],
+      reason: 'SwiftShader rounds the last bit of the blue channel differently for the WebGL2 and WebGPU translations; the GLSL and WGSL perform the same operations in the same order, and Apple GPUs render identical words.',
+    },
   },
   {
     id: 'sunDisk(vec3,vec3,float,float)',

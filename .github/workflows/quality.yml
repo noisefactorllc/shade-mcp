@@ -122,6 +122,12 @@ jobs:
           SHADE_SWIFTSHADER: '1'
         run: node scripts/authored-dsl-smoke.mjs
 
+      - name: Shader-craft library parity
+        env:
+          NOISEMAKER: ${{ github.workspace }}/noisemaker
+          SHADE_SWIFTSHADER: '1'
+        run: node scripts/craft-library-parity.mjs
+
   # Every release is vendored into noisemaker by its pull-shade-mcp workflow,
   # which lands the drop only after noisemaker's scripts/test-shade-mcp passes.
   # This runs the same checks on this build against noisemaker's current main,

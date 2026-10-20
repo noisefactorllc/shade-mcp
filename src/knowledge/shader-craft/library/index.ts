@@ -2,7 +2,8 @@
 // contract, with a WGSL twin of every symbol, and a machine-readable index of both.
 //
 // Library code reads no uniforms, built-ins or textures, only its parameters, so it works in any pass of an
-// effect.
+// effect. scripts/craft-library-parity.mjs renders every function in GLSL on WebGL2 and in WGSL on WebGPU and
+// requires the same 32-bit values unless the symbol's index entry records a measured parity tolerance.
 
 import { LIBRARY_INDEX_MODULES } from '../references/library-index.js'
 import { SHADER_CRAFT_LIBRARY } from './symbols.js'
@@ -110,6 +111,13 @@ export const SHADER_CRAFT_LIBRARY_CONVENTIONS = {
   noUniforms:
     'Library code reads no uniforms, built-ins or textures, only its parameters. Pass the pixel coordinate ' +
     '(gl_FragCoord.xy in GLSL, position.xy in WGSL) and the engine\'s frame as arguments where a function takes them.',
+  parity:
+    'scripts/craft-library-parity.mjs renders every function in GLSL on WebGL2 and in WGSL on WebGPU through ' +
+    'Noisemaker and compares the 32-bit results. Functions without a parity entry gave the same values in both on ' +
+    'every renderer measured (only the sign of a zero or the bits of a NaN may differ); a parity entry records the ' +
+    'measured difference per renderer, ' +
+    'scaled as |a - b| / max(1, |a|, |b|), with its tolerance and its cause. Inputs that GLSL leaves undefined ' +
+    '(negative frame counts, hash inputs beyond the 32-bit int range, a NaN reaching min or max) are not covered.',
 }
 
 const BY_ID = new Map<string, ShaderCraftLibrarySymbol>(SHADER_CRAFT_LIBRARY.map(symbol => [symbol.id, symbol]))

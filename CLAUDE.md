@@ -150,3 +150,9 @@ shader files through the harness server, then calls the shared Noisemaker
 rejects authored requests explicitly; built-in-only requests remain supported.
 Verify this path with `NOISEMAKER` and `PORTABLE` set to their source checkouts and
 `node scripts/authored-dsl-smoke.mjs`; release/pin/vendor qualification is separate.
+
+The shader-craft library's GLSL and WGSL twins are checked against each other by
+`NOISEMAKER=/path/to/noisemaker node scripts/craft-library-parity.mjs` (build first;
+add `SHADE_SWIFTSHADER=1` without a GPU). It renders a probe effect per symbol on
+WebGL2 and WebGPU and compares the 32-bit results; a symbol that may differ carries
+its measured difference, tolerance and cause in its `parity` index entry.
