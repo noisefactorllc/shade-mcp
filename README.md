@@ -275,6 +275,10 @@ The techniques come from their original authors, each credited in `SHADER_CRAFT_
 - Sebastien Hillaire: volumes and sky; Andrew Schneider: clouds
 - Mark Finch: water waves; Ryan Geiss: terrain; Müller et al.: procedural buildings
 
+The shader-craft building-block library (`SHADER_CRAFT_LIBRARY_MODULES`) is the upstream GLSL library adapted to the
+Noisemaker effect contract, with a WGSL twin of every function. `SHADER_CRAFT_LIBRARY` indexes both, and each entry
+cites its technique credits by key.
+
 ## License
 
 MIT

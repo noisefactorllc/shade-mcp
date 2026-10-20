@@ -141,6 +141,166 @@
       ]
     },
     {
+      "path": "skills/shader-art-coding/glsl/common.glsl",
+      "blob": "ce62c27af0dd6aeb4c7fc00e702be37b18725602",
+      "adaptedAs": [
+        "SHADER_CRAFT_LIBRARY_MODULES.common",
+        "SHADER_CRAFT_LIBRARY"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/glsl/hash.glsl",
+      "blob": "3fab3da4f07add2da53ee5be7cde51199f7643c6",
+      "adaptedAs": [
+        "SHADER_CRAFT_LIBRARY_MODULES.hash",
+        "SHADER_CRAFT_LIBRARY"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/glsl/noise.glsl",
+      "blob": "00775b1717d95c32eb6fb07f30e2b1ea68e5c703",
+      "adaptedAs": [
+        "SHADER_CRAFT_LIBRARY_MODULES.noise",
+        "SHADER_CRAFT_LIBRARY"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/glsl/pattern.glsl",
+      "blob": "e9c4ebee60a73b26a1d04b0de9ed43efcd2b9ff6",
+      "adaptedAs": [
+        "SHADER_CRAFT_LIBRARY_MODULES.pattern",
+        "SHADER_CRAFT_LIBRARY"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/glsl/sdf3d.glsl",
+      "blob": "750286d7f5443c59d8b81f7bd9aa4684f8983ddd",
+      "adaptedAs": [
+        "SHADER_CRAFT_LIBRARY_MODULES.sdf3d",
+        "SHADER_CRAFT_LIBRARY"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/glsl/sdf2d.glsl",
+      "blob": "66ae8b1a569f523ae4d2aa3cb3cc53cd61a062a0",
+      "adaptedAs": [
+        "SHADER_CRAFT_LIBRARY_MODULES.sdf2d",
+        "SHADER_CRAFT_LIBRARY"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/glsl/operators.glsl",
+      "blob": "4250163fc791dd63e46ae6dd86b123c3c493c410",
+      "adaptedAs": [
+        "SHADER_CRAFT_LIBRARY_MODULES.operators",
+        "SHADER_CRAFT_LIBRARY"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/glsl/domain.glsl",
+      "blob": "c459870a5bcdd2a6fb63927a395457eb6a17b1f9",
+      "adaptedAs": [
+        "SHADER_CRAFT_LIBRARY_MODULES.domain",
+        "SHADER_CRAFT_LIBRARY"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/glsl/architecture.glsl",
+      "blob": "5448f2e5fd4da242493e550ad6ae1a26489ba349",
+      "adaptedAs": [
+        "SHADER_CRAFT_LIBRARY_MODULES.architecture",
+        "SHADER_CRAFT_LIBRARY"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/glsl/raymarch.glsl",
+      "blob": "1a8c45c882aa5c9b4bf6396beb23a554b7a9179c",
+      "adaptedAs": [
+        "SHADER_CRAFT_LIBRARY_MODULES.raymarch",
+        "SHADER_CRAFT_LIBRARY"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/glsl/intersect.glsl",
+      "blob": "49f3f4babfee5257a031034b263d0d4402ee74ab",
+      "adaptedAs": [
+        "SHADER_CRAFT_LIBRARY_MODULES.intersect",
+        "SHADER_CRAFT_LIBRARY"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/glsl/camera.glsl",
+      "blob": "46fbbed70a89970372fc9a93e57e9908568b1598",
+      "adaptedAs": [
+        "SHADER_CRAFT_LIBRARY_MODULES.camera",
+        "SHADER_CRAFT_LIBRARY"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/glsl/shading.glsl",
+      "blob": "f4c6bfbe092cdee1c81f35e18227eab3bbde53a3",
+      "adaptedAs": [
+        "SHADER_CRAFT_LIBRARY_MODULES.shading",
+        "SHADER_CRAFT_LIBRARY"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/glsl/water.glsl",
+      "blob": "7ed57c0580666946044266d3b5f8e5ceed269f6a",
+      "adaptedAs": [
+        "SHADER_CRAFT_LIBRARY_MODULES.water",
+        "SHADER_CRAFT_LIBRARY"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/glsl/color.glsl",
+      "blob": "309aea9e3693bbef4c18cca42312a3f501cd173e",
+      "adaptedAs": [
+        "SHADER_CRAFT_LIBRARY_MODULES.color",
+        "SHADER_CRAFT_LIBRARY"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/glsl/tonemap.glsl",
+      "blob": "149257b4eaca432e47fa18ee3163e568ab85f825",
+      "adaptedAs": [
+        "SHADER_CRAFT_LIBRARY_MODULES.tonemap",
+        "SHADER_CRAFT_LIBRARY"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/glsl/volume.glsl",
+      "blob": "b1fe89e210526ed45c449a08c5f6b2a761fd54d8",
+      "adaptedAs": [
+        "SHADER_CRAFT_LIBRARY_MODULES.volume",
+        "SHADER_CRAFT_LIBRARY"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/glsl/atmosphere.glsl",
+      "blob": "a05476230119509f0b5431eb26a533fb6129e463",
+      "adaptedAs": [
+        "SHADER_CRAFT_LIBRARY_MODULES.atmosphere",
+        "SHADER_CRAFT_LIBRARY"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/glsl/post.glsl",
+      "blob": "3994cac273a34564bab7e27a12f8e2ba5d7964ce",
+      "adaptedAs": [
+        "SHADER_CRAFT_LIBRARY_MODULES.post",
+        "SHADER_CRAFT_LIBRARY"
+      ]
+    },
+    {
+      "path": "skills/shader-art-coding/glsl/debug.glsl",
+      "blob": "0396650c0fcc9bdca77d55069890935dad1b9b15",
+      "adaptedAs": [
+        "SHADER_CRAFT_LIBRARY_MODULES.debug",
+        "SHADER_CRAFT_LIBRARY"
+      ]
+    },
+    {
       "path": "prompts/video-to-shader-prompt.md",
       "blob": "3ce101fddc9aa4c8f00453cd1f98026ceee44dc5",
       "adaptedAs": [

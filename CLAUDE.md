@@ -23,6 +23,8 @@ npm test         # vitest
 - `src/tools/knowledge/` — 4 knowledge tools (search-effects, analyze-effect, search-source, search-knowledge).
 - `src/tools/utility/` — 2 utility tools (list-effects, generate-manifest).
 - `src/knowledge/` — TF-IDF vector DB, curated shader knowledge, effect index, GLSL index.
+- `src/knowledge/shader-craft/library/` — the shader-craft building blocks in GLSL and WGSL, one module per
+  upstream file, and `SHADER_CRAFT_LIBRARY`, their index (signatures, dependencies, credits, parity tolerances).
 
 ## Tool Registration Pattern
 

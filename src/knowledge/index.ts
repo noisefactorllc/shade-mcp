@@ -63,7 +63,8 @@ export {
   DSL_FIX_KNOWLEDGE,
 } from './state-bundles.js'
 
-// Shader craft: workflow, references, provenance, credits and the upstream licence
+// Shader craft: workflow, references, provenance, credits, the upstream licence, and the GLSL/WGSL
+// building-block library with its index
 export {
   SHADER_CRAFT_CATEGORY,
   SHADER_CRAFT_WORKFLOW,
@@ -72,9 +73,23 @@ export {
   SHADER_CRAFT_PROVENANCE,
   SHADER_CRAFT_CREDITS,
   SHADER_CRAFT_LICENSE,
+  SHADER_CRAFT_LIBRARY,
+  SHADER_CRAFT_LIBRARY_MODULES,
+  SHADER_CRAFT_LIBRARY_PROGRAM_SYMBOLS,
+  SHADER_CRAFT_LIBRARY_CONVENTIONS,
+  getShaderCraftSymbolSource,
 } from './shader-craft/index.js'
 export type {
   ShaderCraftProvenance,
   ShaderCraftCredits,
   ShaderCraftTechniqueCredit,
+  ShaderCraftModuleName,
+  ShaderCraftLanguage,
+  ShaderCraftSymbolKind,
+  ShaderCraftExactness,
+  ShaderCraftLanguageSymbol,
+  ShaderCraftParityTolerance,
+  ShaderCraftLibrarySymbol,
+  ShaderCraftLibraryModule,
+  ShaderCraftProgramSymbol,
 } from './shader-craft/index.js'

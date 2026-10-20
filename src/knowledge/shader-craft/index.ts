@@ -24,6 +24,24 @@ export type { ShaderCraftProvenance } from './provenance.js'
 export { SHADER_CRAFT_CREDITS } from './credits.js'
 export type { ShaderCraftCredits, ShaderCraftTechniqueCredit } from './credits.js'
 export { SHADER_CRAFT_LICENSE } from './license.js'
+export {
+  SHADER_CRAFT_LIBRARY,
+  SHADER_CRAFT_LIBRARY_MODULES,
+  SHADER_CRAFT_LIBRARY_PROGRAM_SYMBOLS,
+  SHADER_CRAFT_LIBRARY_CONVENTIONS,
+  getShaderCraftSymbolSource,
+} from './library/index.js'
+export type {
+  ShaderCraftModuleName,
+  ShaderCraftLanguage,
+  ShaderCraftSymbolKind,
+  ShaderCraftExactness,
+  ShaderCraftLanguageSymbol,
+  ShaderCraftParityTolerance,
+  ShaderCraftLibrarySymbol,
+  ShaderCraftLibraryModule,
+  ShaderCraftProgramSymbol,
+} from './library/index.js'
 
 /** Category of every shader-craft knowledge document. */
 export const SHADER_CRAFT_CATEGORY = 'shader-craft'

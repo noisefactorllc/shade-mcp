@@ -14,7 +14,13 @@ Upstream generates this index from its GLSL library. Call these functions by nam
 \`bundleShader\` to inline exactly what each program uses. Find candidates by searching the \`shader-craft-library-*\`
 references. Signatures are the upstream GLSL ones, with Noisemaker parameter names (\`pixel\` for the fragment's pixel
 coordinate). The shader-craft library provides each function in GLSL and WGSL; where its own index differs from this
-one, the library is authoritative.
+one, the library is authoritative. Library code reads no uniforms, only its parameters, and GLSL programs that use it
+declare \`precision highp float;\` and \`precision highp int;\`.
+
+WGSL has no overloading. A name with one GLSL signature keeps that name in WGSL; each signature of an overloaded name
+adds an underscore and one code per parameter: f, i, u for float, int, uint, f2-f4 for vec2-vec4, u2-u4 for uvec2-uvec4,
+m2-m3 for mat2-mat3. So \`fbm(vec2 p, int octaves)\` is \`fbm_f2i\` in WGSL, \`sdBox(vec3, vec3)\` is \`sdBox_f3f3\` and
+\`saturate(float)\` is \`saturate_f\`. GLSL out and inout parameters are \`ptr<function, T>\` parameters in WGSL.
 
 Tags: **exact** is a true Euclidean distance, safe for blending, AO, shadows and offsets.
 **bound** never overestimates, so it is safe to march, but less accurate for offsets.
@@ -258,7 +264,7 @@ architecture: stable building parameters and filtered facade fields. These are m
 
 raymarch: sphere tracing, normals, soft shadows and ambient occlusion for SDF scenes. SCENE CONTRACT: your program defines   vec2 map(vec3 p)   returning vec2(distance, materialId). Packing the material into a vec2 avoids structs (WebGL forbids ?: on structs) and works with every helper here. GLSL loops start at ZERO, a zero the compiler cannot prove, built from the engine's \`int frame\` uniform. That stops it inlining map() into every loop, which keeps compile times sane and avoids WebGL compiler crashes on large scenes.
 
-- \`#define ZERO (min(frame, 0))\` (with \`uniform int frame;\`)
+- \`#define ZERO (min(frame, 0))\`: the program defines it from its own \`uniform int frame;\` before the library code. In WGSL the program declares \`var<private> ZERO: i32;\` and sets \`ZERO = min(i32(frame), 0);\` at the top of its entry point.
 - \`const int RAYMARCH_MAX_STEPS = 256;\`
 - \`vec3 raymarch(vec3 ro, vec3 rd, float tmin, float tmax, float stepScale)\` - Sphere-trace from ro along unit rd between tmin and tmax. Returns vec3(t, materialId, stepCount). t is -1 on a miss. The hit threshold grows with t (about one pixel's footprint), so distant surfaces don't burn steps. stepScale is 1 for exact or bound fields. Use < 1 (e.g. 0.6) when map() has Lipschitz > 1 (displacement, warps, twist). *Use: every SDF raymarcher.*
 - \`vec3 calcNormal(vec3 p, float eps)\` - Surface normal from 4 tetrahedral samples (cheaper than 6 central differences, and still centered). eps should scale with distance, e.g. 0.0005 * t: that filters distant detail and avoids sparkling. *Use: shading any SDF hit.*
