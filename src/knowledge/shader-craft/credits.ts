@@ -4,6 +4,8 @@
 // web address.
 
 export interface ShaderCraftTechniqueCredit {
+  /** Stable key that library index entries cite (ShaderCraftLibrarySymbol.credits). */
+  key: string
   /** What the technique is used for in the shader-craft knowledge and library. */
   technique: string
   /** The original source of the technique: author and title. */
@@ -32,189 +34,232 @@ export const SHADER_CRAFT_CREDITS: ShaderCraftCredits = {
     'CC BY-NC-SA 3.0, which is incompatible with MIT.',
   techniques: [
     {
+      key: 'quilez-articles',
       technique: 'SDF primitives, operators, smooth minimum, domain repetition, normals, soft shadows, intersectors, fog, palettes, filtered patterns, Voronoi borders, noise derivatives, domain warping',
       source: 'Inigo Quilez, articles on distance functions, smooth minimum, soft shadows, intersectors, fog, palettes, filtering and noise',
       terms: 'articles state no license; ideas reimplemented',
     },
     {
+      key: 'hg-sdf',
       technique: 'Chamfer, stairs and engrave combinators, polar and mirrored repetition',
       source: 'Mercury demogroup, hg_sdf',
       terms: 'MIT OR CC BY-NC 4.0',
     },
     {
+      key: 'pcg-hash',
       technique: 'PCG hashes (pcgHash, pcg3d, pcg4d) and hash quality data',
       source: 'Jarzynski and Olano, "Hash Functions for GPU Rendering", JCGT 9(3), 2020',
       terms: 'paper CC BY-ND 3.0; arithmetic reimplemented',
     },
     {
+      key: 'interleaved-gradient-noise',
       technique: 'Interleaved gradient noise',
       source: 'Jorge Jimenez, "Next Generation Post Processing in Call of Duty: Advanced Warfare", SIGGRAPH 2014',
       terms: 'constants are facts',
     },
     {
+      key: 'r2-sequence',
       technique: 'R2 low-discrepancy sequence',
       source: 'Martin Roberts, "The Unreasonable Effectiveness of Quasirandom Sequences"',
       terms: 'constants are facts',
     },
     {
+      key: 'curl-noise',
       technique: 'Curl noise',
       source: 'Bridson, Hourihan and Nordenstam, "Curl-Noise for Procedural Fluid Flow", SIGGRAPH 2007',
       terms: 'math',
     },
     {
+      key: 'enhanced-sphere-tracing',
       technique: 'Enhanced (over-relaxed) sphere tracing (documented, not shipped)',
       source: 'Keinert et al., "Enhanced Sphere Tracing", STAG 2014',
       terms: 'math',
     },
     {
+      key: 'agx',
       technique: 'AgX tonemapping (minimal polynomial version)',
       source: 'Troy Sobotka (AgX); Benjamin Wrensch / iolite (polynomial fit)',
       terms: 'MIT',
     },
     {
+      key: 'pbr-neutral',
       technique: 'Khronos PBR Neutral tonemapping',
       source: 'Khronos Group, PBR Neutral tone mapper (KhronosGroup ToneMapping repository)',
       terms: 'Apache-2.0 (constants)',
     },
     {
+      key: 'aces-fit',
       technique: 'ACES fitted (RRT+ODT)',
       source: "Stephen Hill, via MJP's BakingLab",
       terms: 'MIT',
     },
     {
+      key: 'oklab',
       technique: 'Oklab / OkLCh',
       source: 'Bjorn Ottosson, "A perceptual color space for image processing" (Oklab)',
       terms: 'public domain / MIT',
     },
     {
+      key: 'blackbody',
       technique: 'Blackbody chromaticity',
       source: 'Krystek 1985 Planckian-locus fit',
       terms: 'math',
     },
     {
+      key: 'filament-brdf',
       technique: 'GGX, height-correlated Smith visibility, Schlick Fresnel',
       source: 'Filament documentation (Google)',
       terms: 'Apache-2.0 (formulas)',
     },
     {
+      key: 'env-brdf',
       technique: 'Environment BRDF approximation',
       source: 'Brian Karis, "Physically Based Shading on Mobile" (after Lazarov)',
       terms: 'constants are facts',
     },
     {
+      key: 'wrap-lighting',
       technique: 'Energy-conserving wrap lighting',
       source: 'Stephen Hill, "Righting Wrap" (2011)',
       terms: 'math',
     },
     {
+      key: 'fast-translucency',
       technique: 'Fast translucency',
       source: 'Barre-Brisebois and Bouchard, GDC 2011',
       terms: 'math',
     },
     {
+      key: 'hillaire-volumes',
       technique: 'Energy-conserving volume integration, sky constants',
       source: 'Sebastien Hillaire, Frostbite (SIGGRAPH 2015/2016) and "A Scalable and Production Ready Sky and Atmosphere Rendering Technique" (EGSR 2020)',
       terms: 'math, constants are facts',
     },
     {
+      key: 'schneider-clouds',
       technique: 'Beer-Powder cloud lighting, dual-lobe phase',
       source: 'Andrew Schneider, Horizon Zero Dawn clouds (SIGGRAPH 2015)',
       terms: 'math',
     },
     {
+      key: 'limb-darkening',
       technique: 'Sun limb darkening',
       source: 'Neckel 1996',
       terms: 'constants are facts',
     },
     {
+      key: 'cornette-shanks',
       technique: 'Cornette-Shanks phase function',
       source: 'Cornette and Shanks 1992',
       terms: 'math',
     },
     {
+      key: 'simplex-noise',
       technique: 'Simplex noise and its analytic gradient',
       source: 'Stefan Gustavson, "Simplex noise demystified" (2005); Gustavson and McEwan, "Tiling simplex noise and flow noise in two and three dimensions", JCGT 11(1), 2022',
       terms: 'papers; math reimplemented, the psrdnoise reference code is not used',
     },
     {
+      key: 'flow-noise',
       technique: 'Flow noise (rotating gradients)',
       source: 'Perlin and Neyret, "Flow Noise", SIGGRAPH 2001 technical sketch',
       terms: 'math',
     },
     {
+      key: 'turbulence',
       technique: 'Turbulence',
       source: 'Ken Perlin, "An Image Synthesizer", SIGGRAPH 1985',
       terms: 'math',
     },
     {
+      key: 'perlin-improved-noise',
       technique: 'Gradient-noise learning reference',
       source: "Ken Perlin, improved noise reference",
       terms: 'reference only; fixed-permutation Java code not copied',
     },
     {
+      key: 'book-of-shaders',
       technique: 'Noise progression: fBm, ridges, cellular construction, domain warping',
       source: 'Gonzalez Vivo and Lowe, The Book of Shaders, chapters 12 ("Cellular Noise") and 13 ("Fractal Brownian Motion")',
       terms: 'explanatory sources; no source code copied',
     },
     {
+      key: 'noise-code-catalog',
       technique: 'External noise code catalog',
       source: 'Gustavson / Ashima, webgl-noise; Gustavson and McEwan, psrdnoise; Auburn, FastNoise Lite',
       terms: 'MIT alternatives named in the noise use-case reference; not vendored',
     },
     {
+      key: 'billow',
       technique: 'Billow terminology',
       source: 'libnoise Billow module documentation',
       terms: 'reference only; code not copied; the library\'s weighted [0,1] billow differs',
     },
     {
+      key: 'hybrid-terrain',
       technique: 'Hybrid terrain height and designed river composition',
       source: 'shader-skills, hybridTerrainHeight and the noise terrain map template',
       terms: "original MIT composition; not a claim to implement Musgrave's hybrid multifractal or hydrological erosion",
     },
     {
+      key: 'finch-water',
       technique: 'Sum-of-sines water with sharpened crests, deep-water dispersion',
       source: 'Mark Finch, "Effective Water Simulation from Physical Models", GPU Gems (2004), chapter 1',
       terms: 'math',
     },
     {
+      key: 'normal-filtering',
       technique: 'Filtering vanished normal detail into roughness',
       source: 'Toksvig, "Mipmapping Normal Maps" (2005); Olano and Baker, "LEAN Mapping" (I3D 2010)',
       terms: 'math',
     },
     {
+      key: 'moss-egg',
       technique: 'Four-arc (Moss) egg',
       source: 'classical compass construction',
       terms: 'geometry',
     },
     {
+      key: 'building-massing',
       technique: 'Procedural building massing hierarchy',
       source: 'Müller et al., "Procedural Modeling of Buildings", SIGGRAPH 2006; SIGGRAPH 2011 course on urban modeling',
       terms: 'concepts reimplemented; not a CGA engine or copied grammar/code',
     },
     {
+      key: 'facade-windows',
       technique: 'Filtered facade window coverage',
       source: 'Inigo Quilez, filterable procedurals / analytic footprint integration',
       terms: 'original periodic rectangle integral; no source copied',
     },
     {
+      key: 'geiss-terrain',
       technique: 'Terrain representation and density/meshing distinction',
       source: 'Ryan Geiss, "Generating Complex Procedural Terrains Using the GPU", GPU Gems 3, chapter 1',
       terms: "explanatory source; the heightfield structures do not implement the chapter's meshing pipeline",
     },
     {
+      key: 'wave-dispersion',
       technique: 'Finite-depth gravity-wave dispersion',
       source: 'MIT 2.20 Marine Hydrodynamics, lecture 20',
       terms: 'mathematical relation, original implementation',
     },
     {
+      key: 'pbrt-dielectric',
       technique: 'Exact dielectric Fresnel and Beer-Lambert attenuation',
       source: 'Physically Based Rendering (PBRT), "Specular Reflection and Transmission" and "Transmittance"',
       terms: 'equations reimplemented; no PBRT source copied',
     },
     {
+      key: 'gpu-gems-refraction',
       technique: 'Coastal refraction pipeline comparison',
       source: 'GPU Gems 2, chapter 19, "Generic Refraction Simulation"',
       terms: 'reference for scene-buffer alternatives; the coastal structure traces a procedural heightfield instead',
+    },
+    {
+      key: 'shader-skills',
+      technique: 'Original library code with no outside technique source in the upstream credits: helper and remapping functions, hex and Truchet tilings, camera rays, hemisphere and rim lighting, sRGB transfer functions, Reinhard tonemapping, film grain, vignette, TPDF dither, gyroid and fold helpers, SDF thickness, and debug views',
+      source: 'gokayfem, shader-skills (original implementations of standard formulas)',
+      terms: 'MIT',
     },
   ],
 }

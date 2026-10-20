@@ -198,6 +198,14 @@ describe('shader-craft licence and credits', () => {
       'The above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.')
   })
 
+  it('gives every technique credit a unique key for the library index to cite', () => {
+    const keys = SHADER_CRAFT_CREDITS.techniques.map(t => t.key)
+    for (const key of keys) expect(key, JSON.stringify(keys)).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/)
+    expect(new Set(keys).size).toBe(keys.length)
+    // Upstream's own original code is a credit of its own: much of the library has no outside source.
+    expect(keys).toContain('shader-skills')
+  })
+
   it('credits shader-skills and the original source of each technique', () => {
     const text = JSON.stringify(SHADER_CRAFT_CREDITS)
     expect(SHADER_CRAFT_CREDITS.adaptedFrom).toContain('shader-skills')
