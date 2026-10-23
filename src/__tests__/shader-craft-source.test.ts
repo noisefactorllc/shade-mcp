@@ -101,6 +101,21 @@ for (const lang of languages) describe(`shader-craft bundler ${lang}`, () => {
     for (const c of creditTable.techniques) expect(result.source.includes(c.source)).toBe(credits.includes(c.key))
     expect(bundleShaderSource(result.source, lang)).toEqual({ source: result.source, added: [], credits: [] })
   })
+  it('merges a later bundle into the existing credit block', () => {
+    const agx = lang === 'glsl' ? 'vec3 c = tonemapAgX(vec3(0.5));' : 'let c = tonemapAgX(vec3f(0.5));'
+    const box = lang === 'glsl' ? 'float d = sdBox(vec2(0.1), vec2(1.0));' : 'let d = sdBox_f2f2(vec2f(0.1), vec2f(1.0));'
+    const first = bundleShaderSource(program(agx, lang), lang)
+    const second = bundleShaderSource(first.source.replace(agx, `${agx} ${box}`), lang)
+    expect(second.added.length).toBeGreaterThan(0)
+    expect(second.source.split('/* shader-craft credits\n')).toHaveLength(2)
+    const included = JSON.parse(/Included symbols: (\[[^\n]*\])/.exec(second.source)![1])
+    expect(included).toEqual(expect.arrayContaining([...first.added, ...second.added]))
+  })
+  it('scans unclosed credit openers in linear time', () => {
+    const agx = lang === 'glsl' ? 'vec3 c = tonemapAgX(vec3(0.5));' : 'let c = tonemapAgX(vec3f(0.5));'
+    const result = bundleShaderSource(`${program(agx, lang)}\n${'// /* shader-craft credits\n'.repeat(50_000)}`, lang)
+    expect(result.added.length).toBeGreaterThan(0)
+  })
   it('keeps self-defined functions, ignores comments and fields, and leaves unused code out', () => {
     const source = lang === 'glsl' ? 'vec3 tonemapAgX(vec3 c) { return c; } void main(){tonemapAgX(vec3(1.0));}'
       : 'fn tonemapAgX(c: vec3f) -> vec3f { return c; } fn main(){tonemapAgX(vec3f(1.0));}'

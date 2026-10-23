@@ -11,7 +11,26 @@ export interface BundledShaderSource {
   /** Technique credit keys for the newly inserted symbols, in library order. */
   credits: string[]
 }
-const CREDIT_BLOCK = /\/\* shader-craft credits\n[\s\S]*?\*\//
+const CREDIT_OPEN = '/* shader-craft credits\n'
+const INCLUDED_LABEL = 'Included symbols: '
+
+// Linear scans: a lazy regex over caller source backtracks quadratically on repeated unclosed openers.
+function findCreditBlock(text: string): { start: number, end: number } | undefined {
+  const start = text.indexOf(CREDIT_OPEN)
+  if (start < 0) return undefined
+  const close = text.indexOf('*/', start + CREDIT_OPEN.length)
+  return close < 0 ? undefined : { start, end: close + 2 }
+}
+
+function includedSymbolIds(block: string): string[] {
+  for (let at = block.indexOf(INCLUDED_LABEL); at >= 0; at = block.indexOf(INCLUDED_LABEL, at + 1)) {
+    const lineEnd = block.indexOf('\n', at)
+    const rest = block.slice(at + INCLUDED_LABEL.length, lineEnd < 0 ? block.length : lineEnd)
+    const close = rest.lastIndexOf(']')
+    if (rest.startsWith('[') && close > 0) return JSON.parse(rest.slice(0, close + 1))
+  }
+  return []
+}
 
 /**
  * Inline only referenced library symbols and their dependencies. GLSL includes every overload of each required
@@ -80,8 +99,8 @@ export function bundleShaderSource(source: string, language: ShaderCraftLanguage
     throw new Error('Shader-craft requires ZERO initialization in the WGSL entry point: ZERO = min(i32(frame), 0); use the program frame uniform.')
   }
   const credits = [...new Set(added.flatMap(id => byId.get(id)!.credits))]
-  const oldBlock = CREDIT_BLOCK.exec(source)
-  const oldIds: string[] = oldBlock ? JSON.parse(/Included symbols: (\[[^\n]*\])/.exec(oldBlock[0])?.[1] ?? '[]') : []
+  const oldBlock = findCreditBlock(source)
+  const oldIds: string[] = oldBlock ? includedSymbolIds(source.slice(oldBlock.start, oldBlock.end)) : []
   const allIds = SHADER_CRAFT_LIBRARY.filter(e => oldIds.includes(e.id) || required.has(e.id)).map(e => e.id)
   const allCredits = new Set(allIds.flatMap(id => byId.get(id)!.credits))
   const header = `/* shader-craft credits\n${SHADER_CRAFT_CREDITS.adaptedFrom}\nIncluded symbols: ${JSON.stringify(allIds)}\n` +
@@ -120,6 +139,7 @@ export function bundleShaderSource(source: string, language: ShaderCraftLanguage
     ? 'vec2 map(vec3 p);\n\n' : '')
   const library = added.map(id => getShaderCraftSymbolSource(id, language)).join('\n\n')
   let result = source.slice(0, cut) + '\n' + (oldBlock ? '' : header + '\n\n') + prototype + library + '\n\n' + source.slice(cut)
-  if (oldBlock) result = result.replace(CREDIT_BLOCK, header)
+  const merged = oldBlock && findCreditBlock(result)
+  if (merged) result = result.slice(0, merged.start) + header + result.slice(merged.end)
   return { source: result, added, credits }
 }
