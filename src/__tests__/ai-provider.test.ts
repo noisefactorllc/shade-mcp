@@ -79,3 +79,39 @@ describe('AI request bounds', () => {
     expect(aiClientOptions().maxRetries).toBeLessThanOrEqual(1)
   })
 })
+
+describe('Anthropic telemetry', () => {
+  it('does not propagate process-wide tracing into provider requests', async () => {
+    const { propagation } = await import('@opentelemetry/api')
+    const requests: Headers[] = []
+    propagation.setGlobalPropagator({
+      inject(_context, carrier, setter) {
+        setter.set(carrier, 'traceparent', '00-0123456789abcdef0123456789abcdef-0123456789abcdef-01')
+      },
+      extract: context => context,
+      fields: () => ['traceparent'],
+    })
+    vi.stubEnv('ANTHROPIC_OPEN_TELEMETRY', 'true')
+    vi.stubGlobal('fetch', async (_input: unknown, init: RequestInit) => {
+      requests.push(new Headers(init.headers))
+      return Response.json({
+        id: 'message-test', type: 'message', role: 'assistant', model: 'test-model',
+        content: [{ type: 'text', text: 'result' }], stop_reason: 'end_turn', stop_sequence: null,
+        usage: { input_tokens: 1, output_tokens: 1 },
+      })
+    })
+    try {
+      const { callAI } = await import('../ai/provider.js')
+      expect(await callAI({
+        system: 'test', userContent: [{ type: 'text', text: 'test' }],
+        ai: { provider: 'anthropic', apiKey: 'test-key', model: 'test-model' },
+      })).toBe('result')
+      expect(requests).toHaveLength(1)
+      expect(requests[0].has('traceparent')).toBe(false)
+    } finally {
+      propagation.disable()
+      vi.unstubAllGlobals()
+      vi.unstubAllEnvs()
+    }
+  })
+})

@@ -77,7 +77,7 @@ export async function callAI(options: CallAIOptions): Promise<string | null> {
 }
 
 async function callAnthropic(options: CallAIOptions): Promise<string | null> {
-  const client = new Anthropic({ apiKey: options.ai.apiKey, ...aiClientOptions() })
+  const client = new Anthropic({ apiKey: options.ai.apiKey, ...aiClientOptions(), openTelemetry: false })
 
   const content: Anthropic.MessageCreateParams['messages'][0]['content'] = options.userContent.map(block => {
     if (block.type === 'image_url' && block.image_url) {
