@@ -15,6 +15,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   compile error a selection returns instead of waiting for the timeout, and
   takes a backend switch's result when it resolves. `docs/SETUP.md` named the
   wrong viewer root for Portable.
+- **A flat effect directory is listed and searchable.** `listEffects` and
+  `searchEffects` scanned only `namespace/effect` folders, so Portable's single
+  effect returned an empty list. It is now listed under its directory name, the
+  id every other tool accepts, and the listing adds `func`, the name a DSL
+  program calls.
+- **The seamless-loop advice keeps the radius outside the angle.**
+  `searchShaderKnowledge` taught `cos/sin of time*TAU*radius`, which leaves the
+  loop open for a non-integer radius; the plasma recipe had the same fault with
+  `speed`. Both now close at the seam.
+- **Claude Code setup names the files it reads.** The setup guide placed MCP
+  servers in `settings.json`; Claude Code reads them from `.mcp.json` and
+  `~/.claude.json`, or `claude mcp add`.
 
 ## [0.4.12] — 2026-10-12
 

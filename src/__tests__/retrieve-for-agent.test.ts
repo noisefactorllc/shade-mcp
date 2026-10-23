@@ -10,7 +10,9 @@ import { retrieveForAgent, CURATED_KNOWLEDGE } from '../knowledge/index.js'
 // Every expected value below was produced by running retrieveForAgent at
 // shade-mcp 531ae0c4ebbb07c56614e0ec0e7b510e356a0c9b, the commit before the
 // shader-craft knowledge, on the same queries. `ids` are the retrieved curated
-// documents in order; `sha256` covers the whole returned string.
+// documents in order; `sha256` covers the whole returned string. The one
+// exception is "noise animation": its output carries the corrected seamless-loop
+// advice (radius outside the angle), so its hash was re-pinned with that text.
 const BASELINE: Array<{
   query: string
   phase: 'generate' | 'fix'
@@ -29,7 +31,7 @@ const BASELINE: Array<{
     sha256: '79cf57e80c5d983fdea91473c752834111ecb0f9edf4c5c0a14a8dfae8ba0833' },
   { query: 'noise animation', phase: 'generate', context: {},
     ids: ['noise-techniques', 'animation-patterns', 'domain-warping', 'common-errors'],
-    sha256: '6f1e23ba1f4295bcdfd0b1e148e086f5a59362ca37f0299b476780735f13aa8f' },
+    sha256: 'a20400a2a87a9566e9db1af3d3f51f0873388d242677d24cdeb1a51f8a34c69f' },
   { query: 'kaleidoscope mirror symmetry', phase: 'generate', context: {},
     ids: [],
     sha256: '4419ced9f9cf39d850259a58dfbc57b7d93454e04d2c473cdd37e5c1826cf942' },

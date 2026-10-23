@@ -1,6 +1,6 @@
 import { readdir, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { loadEffectDefinition, type EffectDefinition } from '../formats/index.js'
 
 export class EffectIndex {
@@ -10,6 +10,19 @@ export class EffectIndex {
   async initialize(effectsDir: string): Promise<void> {
     if (this.initialized) return
     if (!existsSync(effectsDir)) return
+
+    // Flat layout: the effects directory is itself one effect, known by the
+    // directory's name everywhere else (resolveEffectDir, the viewer server).
+    if (existsSync(join(effectsDir, 'definition.json')) || existsSync(join(effectsDir, 'definition.js'))) {
+      const id = basename(effectsDir) || 'effect'
+      try {
+        this.effects.set(id, loadEffectDefinition(effectsDir))
+      } catch (err) {
+        console.warn(`[shade-mcp] skipping unparseable effect ${id}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+      this.initialized = true
+      return
+    }
 
     const entries = await readdir(effectsDir)
     for (const ns of entries) {

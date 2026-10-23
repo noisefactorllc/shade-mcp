@@ -102,6 +102,8 @@ Environment variables:
 
 ### Claude Code
 
+Put this in `.mcp.json` at the project root, or register it with `claude mcp add shade -- node /path/to/shade-mcp/dist/index.js`.
+
 ```json
 {
   "mcpServers": {

@@ -296,7 +296,7 @@ export const GLSL_RECIPES = `## GLSL Recipes
 
 ### Animated Plasma
 \`\`\`glsl
-float t = time * TAU * speed;
+float t = time * TAU * floor(speed); // whole cycles per loop keep the seam closed
 float v = sin(uv.x * scale + t) + sin(uv.y * scale + t);
 v += sin((uv.x + uv.y) * scale + t) + sin(length(uv - 0.5) * scale * 2.0 + t);
 vec3 col = 0.5 + 0.5 * cos(TAU * (v * 0.25 + vec3(0.0, 0.33, 0.67)));

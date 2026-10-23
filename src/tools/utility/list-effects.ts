@@ -10,7 +10,7 @@ export const listEffectsSchema = {
 export function registerListEffects(server: McpServer): void {
   server.tool(
     'listEffects',
-    'List all effects, optionally filtered by namespace.',
+    'List all effects, optionally filtered by namespace. Pass `id` to the other tools; `func` is the name a DSL program calls.',
     listEffectsSchema,
     async (args: any) => {
       const index = await getSharedEffectIndex()
@@ -22,6 +22,7 @@ export function registerListEffects(server: McpServer): void {
         effects: effects.map(e => ({
           id: e.id,
           name: e.def.name || e.def.func,
+          func: e.def.func,
           description: e.def.description || '',
           tags: e.def.tags || [],
           passes: e.def.passes.length,

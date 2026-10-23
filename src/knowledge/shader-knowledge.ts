@@ -146,7 +146,7 @@ export const CURATED_KNOWLEDGE: KnowledgeDocument[] = [
   {
     id: 'animation-patterns',
     title: 'Seamless Animation Patterns',
-    content: 'For loops without visible seams, use timeCircle (cos/sin of time*TAU*radius). Avoid raw time in noise. Use periodic functions. For the Bleuje pattern, set t = fract(time). Animate properties with sin/cos of t*TAU. Use integer transitions with floor(t) for discrete changes.',
+    content: 'For loops without visible seams, use timeCircle: vec2(cos(time*TAU), sin(time*TAU)) * radius, with time looping 0 to 1. The radius scales the circle and never multiplies the angle: a non-integer factor on time*TAU leaves the circle open at the seam. To repeat within one loop, multiply time*TAU by an integer cycle count. Avoid raw time in noise. Use periodic functions. For the Bleuje pattern, set t = fract(time). Animate properties with sin/cos of t*TAU. Use integer transitions with floor(t) for discrete changes.',
     category: 'technique',
     tags: ['animation', 'loop', 'seamless', 'time'],
   },

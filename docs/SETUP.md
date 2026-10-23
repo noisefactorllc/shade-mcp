@@ -69,7 +69,7 @@ Remove or comment out the old `noisemaker-shader-tools` entry in `.vscode/settin
 
 ### Claude Code
 
-Add to `~/.claude/settings.json` (or project-level `.claude/settings.local.json`):
+Add this to `.mcp.json` at the root of the checkout, or register the same server for yourself with `claude mcp add shade -e NAME=value ... -- node /path/to/shade-mcp/dist/index.js`. Claude Code reads MCP servers from `.mcp.json` and `~/.claude.json`, not from `settings.json`:
 
 ```json
 {
@@ -133,7 +133,7 @@ Remove or comment out the old `portable-shader` entry if present.
 
 ### Claude Code
 
-Add to `~/.claude/settings.json` (or project-level `.claude/settings.local.json`):
+Add this to `.mcp.json` at the root of the checkout, or register the same server for yourself with `claude mcp add shade -e NAME=value ... -- node /path/to/shade-mcp/dist/index.js`. Claude Code reads MCP servers from `.mcp.json` and `~/.claude.json`, not from `settings.json`:
 
 ```json
 {
@@ -172,7 +172,7 @@ You do not need to delete the old MCP servers.
 Make sure only one server is active at a time:
 
 - **VS Code**: Remove the old server entry from `.vscode/mcp.json` or `.vscode/settings.json`
-- **Claude Code**: Remove the old server entry from the settings file that contains it
+- **Claude Code**: `claude mcp list` shows the registered servers; `claude mcp remove <name>` removes the old one
 - **Cursor**: Remove the old server entry from `.cursor/mcp.json`
 
 If both old and new MCPs are active, you'll get duplicate tool names and unpredictable behavior.
