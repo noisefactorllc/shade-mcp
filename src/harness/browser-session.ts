@@ -92,8 +92,9 @@ export function swiftshaderVulkanEnv(): Record<string, string> {
  * passed in from Node arrives deserialized, and its graph object identity —
  * the primary rebuild signal — would not survive the boundary.
  */
-function selectAndAwaitEffect({ effectId, globals, timeout }: {
+function selectAndAwaitEffect({ effectId, effectUrl, globals, timeout }: {
   effectId: string
+  effectUrl: string
   globals: ViewerGlobals
   timeout: number
 }): Promise<EffectSelectionResult> {
@@ -131,10 +132,24 @@ function selectAndAwaitEffect({ effectId, globals, timeout }: {
       statusText: document.getElementById('status')?.textContent || '',
     }
 
-    const select = document.getElementById('effect-select') as HTMLSelectElement | null
-    if (select) {
-      select.value = effectId
-      select.dispatchEvent(new Event('change'))
+    // A viewer that publishes its own selection entry point (Portable's
+    // viewer) is driven through it; it may report a compile failure for this
+    // selection directly. Otherwise drive the noisemaker demo's effect-select.
+    let selectError: string | null = null
+    const selectFn = typeof globals.selectEffect === 'string' ? w[globals.selectEffect] : undefined
+    if (typeof selectFn === 'function') {
+      Promise.resolve()
+        .then(() => selectFn(effectId, { url: effectUrl }))
+        .then(
+          (r: any) => { if (r && typeof r.error === 'string') selectError = r.error },
+          (e: any) => { selectError = e && e.message ? e.message : String(e) },
+        )
+    } else {
+      const select = document.getElementById('effect-select') as HTMLSelectElement | null
+      if (select) {
+        select.value = effectId
+        select.dispatchEvent(new Event('change'))
+      }
     }
 
     const start = Date.now()
@@ -158,6 +173,19 @@ function selectAndAwaitEffect({ effectId, globals, timeout }: {
           message: `Timed out after ${timeout} ms waiting for the viewer to finish building ${effectId}`
             + (idNow && idNow !== effectId ? ` (the viewer is still showing ${idNow})`
               : !idNow ? ' (the viewer does not report which effect it is showing)' : ''),
+          effectId: idNow ?? null,
+          backend: backendName,
+          passes: null,
+        })
+        return
+      }
+
+      // The viewer's own selection call reported a failure for this
+      // selection: it is bound to the request by construction.
+      if (selectError !== null) {
+        resolve({
+          status: 'error',
+          message: selectError,
           effectId: idNow ?? null,
           backend: backendName,
           passes: null,
@@ -542,9 +570,18 @@ export class BrowserSession {
 
       if (readBackend() === targetBackend) return { reached: true, backend: targetBackend }
 
-      // Try renderer.switchBackend first (noisemaker demo + Shade app expose this).
+      // A viewer that publishes setBackend switches and recompiles itself
+      // (Portable's viewer); the renderer's switchBackend alone leaves it with
+      // no compiled graph on the new backend.
+      const setFn = typeof globals.setBackend === 'string' ? w[globals.setBackend] : undefined
+      // Try renderer.switchBackend next (noisemaker demo + Shade app expose this).
       const renderer = w[globals.canvasRenderer]
-      if (renderer && typeof renderer.switchBackend === 'function') {
+      if (typeof setFn === 'function') {
+        // The viewer's own switch has finished its recompile when it resolves,
+        // so its outcome is final: no polling.
+        await setFn(targetBackend)
+        return { reached: readBackend() === targetBackend, backend: readBackend() }
+      } else if (renderer && typeof renderer.switchBackend === 'function') {
         await renderer.switchBackend(targetBackend)
       } else {
         // Fall back to UI controls. Try button[data-backend] (noisemaker demo)
@@ -612,8 +649,10 @@ export class BrowserSession {
    */
   async selectEffect(effectId: string): Promise<EffectSelectionResult> {
     const page = this.page!
+    // Where this session's viewer server serves the effect's directory.
+    const effectUrl = `/effects/${effectId.split('/').map(encodeURIComponent).join('/')}/`
     const outcome = await page.evaluate(selectAndAwaitEffect, {
-      effectId, globals: this.globals, timeout: this.timeoutMs,
+      effectId, effectUrl, globals: this.globals, timeout: this.timeoutMs,
     }) as EffectSelectionResult
 
     if (outcome.status === 'ok' && outcome.effectId !== null && outcome.effectId !== effectId) {

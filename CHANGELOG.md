@@ -3,6 +3,19 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] — 2026-10-23
+
+### Fixed
+
+- **The browser tools work with Portable's viewer.** Every viewer tool timed
+  out against it: the viewer had no `effect-select` element and did not report
+  which effect it was showing, and a backend switch left it with no compiled
+  graph on the new backend. A viewer can now publish `SelectEffect(id, { url })`
+  and `SetBackend(backend)`; shade-mcp calls them when present, reports the
+  compile error a selection returns instead of waiting for the timeout, and
+  takes a backend switch's result when it resolves. `docs/SETUP.md` named the
+  wrong viewer root for Portable.
+
 ## [0.4.12] — 2026-10-12
 
 ### Fixed

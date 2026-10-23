@@ -102,7 +102,9 @@ generateManifest()
 
 ## portable
 
-The effect lives at `portable/effect/` in a flat layout (no namespace nesting). shade-mcp auto-detects this. The viewer lives at `portable/viewer/`.
+The effect lives at `portable/effect/` in a flat layout (no namespace nesting). shade-mcp auto-detects this. The viewer lives at `portable/viewer/` and loads the effect from `../effect/`, so the viewer root is the checkout itself.
+
+A Portable checkout already registers its vendored shade-mcp in `.mcp.json` with these settings. After `npm install` there, Claude Code offers that server when it opens the checkout. The blocks below are for running your own shade-mcp build instead.
 
 ### VS Code (Copilot)
 
@@ -118,7 +120,8 @@ Create or edit `portable/.vscode/mcp.json`:
       "env": {
         "SHADE_EFFECTS_DIR": "/path/to/portable/effect",
         "SHADE_PROJECT_ROOT": "/path/to/portable",
-        "SHADE_VIEWER_ROOT": "/path/to/portable/viewer",
+        "SHADE_VIEWER_ROOT": "/path/to/portable",
+        "SHADE_VIEWER_PATH": "/viewer/index.html",
         "SHADE_GLOBALS_PREFIX": "__portable"
       }
     }
@@ -141,7 +144,8 @@ Add to `~/.claude/settings.json` (or project-level `.claude/settings.local.json`
       "env": {
         "SHADE_EFFECTS_DIR": "/path/to/portable/effect",
         "SHADE_PROJECT_ROOT": "/path/to/portable",
-        "SHADE_VIEWER_ROOT": "/path/to/portable/viewer",
+        "SHADE_VIEWER_ROOT": "/path/to/portable",
+        "SHADE_VIEWER_PATH": "/viewer/index.html",
         "SHADE_GLOBALS_PREFIX": "__portable"
       }
     }

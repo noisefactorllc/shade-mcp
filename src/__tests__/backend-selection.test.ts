@@ -590,3 +590,121 @@ describe('browser tools select the requested backend', () => {
     expect(setBackendCalls).toEqual(['webgpu'])
   })
 })
+
+// A viewer may expose its own selection and backend API instead of the
+// noisemaker demo's effect-select element (Portable's viewer does). The
+// harness calls selectEffect(id, { url }) with the URL its viewer server
+// serves the effect at, binds compile errors the viewer reports, and switches
+// backends through setBackend so the viewer recompiles on the new backend.
+function installApiViewer(globals: ViewerGlobals, options: { compileError?: string } = {}): { w: any; calls: unknown[][] } {
+  const w: any = {}
+  const calls: unknown[][] = []
+  const state = { effect: 'effect', backend: 'glsl', generation: 0, graph: { passes: [{ name: 'initial' }], renderSurface: 'frame' } as any }
+  const pipeline: any = {
+    backend: {
+      getName: () => (state.backend === 'wgsl' ? 'WebGPU' : 'WebGL2'),
+      gl: { bindFramebuffer: () => {}, readPixels: (_x: number, _y: number, _wd: number, _ht: number, _f: number, _t: number, out: Uint8Array) => out.fill(200) },
+      textures: new Map([['global_frame_read', {}]]),
+      device: { queue: { onSubmittedWorkDone: async () => {} } },
+      readPixels: async () => ({ data: new Uint8Array(64).fill(200), width: 4, height: 4 }),
+    },
+    isCompiling: false,
+    get graph() { return state.graph },
+    setUniform: () => {},
+    globalUniforms: {},
+  }
+  const rebuild = async (apply: () => void): Promise<void> => {
+    pipeline.isCompiling = true
+    await new Promise(r => setTimeout(r, 20))
+    apply()
+    state.graph = { passes: [{ name: `${state.effect}-${state.backend}` }], renderSurface: 'frame' }
+    pipeline.isCompiling = false
+    state.generation++
+  }
+  w[globals.renderingPipeline] = pipeline
+  Object.defineProperty(w, globals.currentEffect, { configurable: true, get: () => state.effect })
+  Object.defineProperty(w, globals.pipelineGeneration!, { configurable: true, get: () => state.generation })
+  w[globals.currentBackend] = () => state.backend
+  w[globals.canvasRenderer] = {
+    canvas: { width: 4, height: 4 },
+    render: () => {},
+    switchBackend: async () => { throw new Error('renderer.switchBackend bypasses the viewer; setBackend must be used') },
+  }
+  w[globals.setPaused] = () => {}
+  w[globals.setPausedTime] = () => {}
+  Object.defineProperty(w, globals.frameCount, { configurable: true, get: () => 0 })
+  w[globals.selectEffect!] = async (id: string, opts: { url: string }) => {
+    calls.push(['selectEffect', id, opts])
+    if (options.compileError) {
+      pipeline.isCompiling = true
+      await new Promise(r => setTimeout(r, 10))
+      pipeline.isCompiling = false
+      return { error: options.compileError }
+    }
+    await rebuild(() => { state.effect = id })
+    return { ok: true }
+  }
+  w[globals.setBackend!] = async (backend: string) => {
+    calls.push(['setBackend', backend])
+    await rebuild(() => { state.backend = backend })
+  }
+  ;(globalThis as any).window = w
+  ;(globalThis as any).requestAnimationFrame = (cb: () => void) => setTimeout(cb, 0)
+  ;(globalThis as any).document = {
+    getElementById: (id: string) => (id === 'status' ? { textContent: '' } : null),
+    querySelector: () => null,
+  }
+  return { w, calls }
+}
+
+describe('viewers that expose selectEffect and setBackend globals', () => {
+  afterEach(() => {
+    delete (globalThis as any).window
+    delete (globalThis as any).document
+    delete (globalThis as any).requestAnimationFrame
+  })
+
+  it('selects through selectEffect with the URL the viewer server serves the effect at', async () => {
+    const { calls } = installApiViewer(DEFAULT_GLOBALS)
+    const result = await compileEffect(makeSession('webgl2', 2000), 'user/glass')
+    expect(result.status).toBe('ok')
+    expect(result.effect_id).toBe('user/glass')
+    expect(calls).toContainEqual(['selectEffect', 'user/glass', { url: '/effects/user/glass/' }])
+  })
+
+  it('reports the compile error the viewer returns instead of waiting for the timeout', async () => {
+    installApiViewer(DEFAULT_GLOBALS, { compileError: "ERROR: 0:12: 'blob' : undeclared identifier" })
+    const started = Date.now()
+    const result = await compileEffect(makeSession('webgl2', 5000), 'effect')
+    expect(result.status).toBe('error')
+    expect(result.message).toContain("'blob' : undeclared identifier")
+    expect(Date.now() - started).toBeLessThan(2000)
+  })
+
+  it('switches backends through setBackend so the viewer recompiles on the new backend', async () => {
+    const { calls } = installApiViewer(DEFAULT_GLOBALS)
+    const result = await compileEffect(makeSession('webgpu', 2000), 'effect')
+    expect(result.status).toBe('ok')
+    expect(result.backend).toBe('WebGPU')
+    expect(calls[0]).toEqual(['setBackend', 'wgsl'])
+  })
+})
+
+describe('a viewer setBackend that cannot reach the backend', () => {
+  afterEach(() => {
+    delete (globalThis as any).window
+    delete (globalThis as any).document
+    delete (globalThis as any).requestAnimationFrame
+  })
+
+  it('fails at once with the backend the viewer stayed on', async () => {
+    const { w } = installApiViewer(DEFAULT_GLOBALS)
+    // An effect with GLSL shaders only: the viewer recompiles and stays on glsl.
+    w[DEFAULT_GLOBALS.setBackend!] = async () => {}
+    const started = Date.now()
+    const result = await compileEffect(makeSession('webgpu', 5000), 'effect')
+    expect(result.status).toBe('error')
+    expect(result.message).toContain('still on glsl')
+    expect(Date.now() - started).toBeLessThan(2000)
+  })
+})

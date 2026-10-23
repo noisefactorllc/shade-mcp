@@ -33,7 +33,20 @@ The browser tools use Chromium. Seven control a viewer page that hosts the rende
 shade-mcp does not include a viewer.
 Set `SHADE_VIEWER_ROOT` to the smallest directory containing the viewer and its imported modules.
 For the seven viewer tools, the page must expose the renderer through window globals.
-Set `SHADE_GLOBALS_PREFIX` to match those globals. `runDslProgram` uses a fresh
+Set `SHADE_GLOBALS_PREFIX` to match those globals. With prefix `<p>`, the
+viewer publishes `<p>CanvasRenderer`, `<p>RenderingPipeline`,
+`<p>CurrentBackend()` (`glsl` or `wgsl`), `<p>CurrentEffect` (the effect id, or
+an entry with `id` or `namespace` and `name`, and `instance.globals`),
+`<p>SetPaused`, `<p>SetPausedTime`, `<p>FrameCount` and optionally
+`<p>PipelineGeneration`, a number it bumps after every successful compile. To
+select an effect, shade-mcp calls `<p>SelectEffect(id, { url })` when the
+viewer publishes it, where `url` is where shade-mcp's server serves the
+effect's directory (`/effects/<id>/`); the call resolves when the compile
+finishes and may resolve to `{ error }`. Without it, shade-mcp drives a
+`<select id="effect-select">`. To switch backends, it calls
+`<p>SetBackend('glsl' | 'wgsl')` when published, which recompiles, and
+otherwise the renderer's `switchBackend`. Portable's viewer publishes the
+selection and backend calls. `runDslProgram` uses a fresh
 renderer independently of the viewer globals and `SHADE_VIEWER_PATH`. By default
 it imports Noisemaker source modules from `/shaders/src/index.js` and assets from
 `/shaders` under `SHADE_VIEWER_ROOT`. For Portable's built-in Noisemaker DSL,
