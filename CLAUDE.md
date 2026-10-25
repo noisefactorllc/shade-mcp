@@ -11,17 +11,18 @@ npm test         # vitest
 
 ## Architecture
 
-- `src/index.ts` — Entry point. Registers 18 tools with McpServer, starts stdio transport.
+- `src/index.ts` — Entry point. Starts the stdio transport.
+- `src/server.ts` — `createShadeServer()` registers every tool with McpServer.
 - `src/config.ts` — Config from env vars (SHADE_EFFECTS_DIR, SHADE_VIEWER_PORT, SHADE_VIEWER_ROOT, SHADE_VIEWER_PATH, SHADE_BACKEND, SHADE_PROJECT_ROOT, SHADE_GLOBALS_PREFIX).
 - `src/ai/provider.ts` — AI abstraction. Anthropic-first, OpenAI fallback. Reads API keys from env or dotfiles.
 - `src/formats/` — Effect definition parsers. Auto-detects definition.json (preferred) vs definition.js (acorn AST, literal values only; marks the result `partial` where a value is computed at run time).
 - `src/harness/` — Browser automation. `server-manager.ts` (ref-counted HTTP server), `browser-session.ts` (Playwright lifecycle), `pixel-reader.ts` (image metrics).
-- `src/tools/browser/` — 8 browser-based tools (compile, render, describe, benchmark, uniforms, passthrough, parity, dsl).
-- `src/tools/analysis/` — 4 tools analyze files on disk (structure, alg-equiv, compare, branching).
+- `src/tools/browser/` — browser-based tools (compile, render, describe, benchmark, uniforms, passthrough, parity, dsl).
+- `src/tools/analysis/` — tools that analyze files on disk (structure, alg-equiv, compare, branching).
   `structure.ts` detects GLSL name collisions: uniforms versus functions, reserved words, and built-in shadowing.
   `compare.ts` exports `extractFunctionNames`, `extractUniforms`, and `stripComments` helpers for GLSL/WGSL static analysis.
-- `src/tools/knowledge/` — 4 knowledge tools (search-effects, analyze-effect, search-source, search-knowledge).
-- `src/tools/utility/` — 2 utility tools (list-effects, generate-manifest).
+- `src/tools/knowledge/` — knowledge tools (search-effects, analyze-effect, search-source, search-knowledge, shader-craft).
+- `src/tools/utility/` — utility tools (list-effects, generate-manifest).
 - `src/knowledge/` — TF-IDF vector DB, curated shader knowledge, effect index, GLSL index.
 - `src/knowledge/shader-craft/library/` — the shader-craft building blocks in GLSL and WGSL, one module per
   upstream file, and `SHADER_CRAFT_LIBRARY`, their index (signatures, dependencies, credits, parity tolerances).
@@ -117,24 +118,19 @@ Supply the environment variables for that project.
 - Vendors full `dist/` via `pull-shade-mcp` script (clones from GitHub, builds, copies)
 - Uses shade-mcp as MCP server and as library (harness imports)
 - Gets name collision detection automatically on next `pull-shade-mcp` run
-- Consumer contract: apps that read portable effect JSON MUST wrap the effect data in a real `Effect` instance.
+- Consumer contract: apps that read portable effect JSON must wrap the effect data in a real `Effect` instance.
   Use `new Effect({...})` before registering the effect with the runtime.
   Plain object literals lack `Effect.prototype.asyncInit` and crash the pipeline's lifecycle guard.
   See `portable/docs/FORMAT.md` → Registration → Consumer Contract.
 
 ### shade (`../shade`)
 - Vendors only `dist/knowledge/` via `pull-shade-mcp` (knowledge module for augmenting prompts)
-- In-app agent in `server/tools/index.js` implements tool definitions as plain objects
-- `server/routes/chat.js` calls `executeToolCall()` directly (not via MCP protocol)
-- Currently uses: `search_effects`, `search_shader_source`, `search_shader_knowledge`, `analyze_effect`, `list_effects`
-- To add `checkEffectStructure` to shade's in-app agent, add its tool definition to the `tools` array.
-  Implement an `executeToolCall` case that calls the function from a vendored harness module.
 
 ## Viewer
 
 shade-mcp does not include a viewer.
 Consumers must provide one through `SHADE_VIEWER_ROOT`, or through the `viewerRoot` option in library mode.
-The seven viewer-driven browser tools require window globals that match the configured prefix.
+The viewer-driven browser tools require window globals that match the configured prefix.
 The default is `__shade*`. Set `SHADE_GLOBALS_PREFIX` to change the prefix.
 `runDslProgram` uses a fresh blank page and imports the configured Noisemaker
 module and assets. Its defaults resolve under `SHADE_VIEWER_ROOT` when that is
@@ -142,7 +138,7 @@ the Noisemaker repository root. For Portable's built-in Noisemaker DSL, set
 `SHADE_DSL_RENDERER_MODULE=https://shaders.noisedeck.app/1/noisemaker-shaders-core.esm.js`,
 `SHADE_DSL_ASSETS_BASE=https://shaders.noisedeck.app/1`, and
 `SHADE_DSL_USE_BUNDLES=true`. Keep Portable's viewer root/path/globals for the
-seven viewer-driven tools. For authored `user.*` effects, pass `effects` as up to
+viewer-driven tools. For authored `user.*` effects, pass `effects` as up to
 16 comma-separated Portable package IDs under `SHADE_EFFECTS_DIR` (the directory
 name for a flat effect). The fresh batch loads raw JSON and the requested backend's
 shader files through the harness server, then calls the shared Noisemaker
