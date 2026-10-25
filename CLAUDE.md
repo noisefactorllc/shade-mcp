@@ -124,7 +124,7 @@ Supply the environment variables for that project.
   See `portable/docs/FORMAT.md` → Registration → Consumer Contract.
 
 ### shade (`../shade`)
-- Vendors only `dist/knowledge/` via `pull-shade-mcp` (knowledge module for augmenting prompts)
+- Uses only the knowledge module (`dist/knowledge/`) of a pinned shade-mcp release, for augmenting prompts
 
 ## Viewer
 
