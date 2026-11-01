@@ -39,6 +39,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  downstream-credentials:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify downstream GitHub App credentials
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: Iv23liVHXh37ZQ13M67k
+          private-key: ${{ secrets.NOISEDECK_APP_PRIVATE_KEY }}
+          owner: noisefactorllc
+          permission-contents: write
+          repositories: |
+            noisemaker
+            portable
+            shade
+
   quality:
     runs-on: ubuntu-latest
     steps:
