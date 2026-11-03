@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { BrowserSession, effectSelectionProblem, requestIdentity } from '../../harness/browser-session.js'
 import type { EffectSelectionResult } from '../../harness/types.js'
+import { installProgramRebuild } from '../../harness/program-rebuild.js'
 import { getConfig } from '../../config.js'
 import { resolveEffectIds } from '../resolve-effects.js'
 import { toolResult } from '../tool-result.js'
@@ -44,6 +45,10 @@ export async function testUniformResponsiveness(
       }
     }
 
+    // Give the page the program rebuild before the selection uploads its media
+    // and text inputs, so a rebuild can upload them again.
+    await page.evaluate(installProgramRebuild, { globals: session.globals, timeout: session.timeoutMs })
+
     // Select and wait until the page finished building THIS effect (issue
     // #34) — status text is not a readiness signal.
     const selection: EffectSelectionResult = await session.selectEffect(effectId)
@@ -68,14 +73,16 @@ export async function testUniformResponsiveness(
 
     const result = await page.evaluate(async ({ globals, settleMs }) => {
       const w = window as any
-      const pipeline = w[globals.renderingPipeline]
+      // A capture can rebuild the program (resetState below), which replaces
+      // the pipeline and its backend.
+      let pipeline = w[globals.renderingPipeline]
       const effect = w[globals.currentEffect]
       if (!pipeline || !effect?.instance?.globals) {
         return { status: 'error', tested_uniforms: [], details: 'No effect loaded' }
       }
 
       const renderer = w[globals.canvasRenderer]
-      const backend = pipeline.backend
+      let backend = pipeline.backend
       const backendName = backend?.getName?.() || 'unknown'
 
       // Read the rendered frame from the offscreen render surface through the
@@ -167,6 +174,7 @@ export async function testUniformResponsiveness(
       }
 
       async function captureAll() {
+        if (resetMode) await resetState()
         const out: Array<{ mean: number[]; samples: number[]; pixels: Uint8Array }> = []
         for (const t of CAPTURE_TIMES) {
           const m = await captureMetrics(t)
@@ -188,10 +196,47 @@ export async function testUniformResponsiveness(
         (typeof value === 'string' || typeof value === 'boolean') && typeof renderer?.convertParameterForUniform === 'function'
           ? renderer.convertParameterForUniform(value, spec)
           : value
+      const apply = (uniform: string, value: unknown) => {
+        if (pipeline.setUniform) pipeline.setUniform(uniform, value)
+        else if (pipeline.globalUniforms) pipeline.globalUniforms[uniform] = value
+      }
+      // Every value the check sets, so a rebuilt program gets them again.
+      const applied = new Map<string, unknown>()
       const setValue = (spec: any, value: unknown) => {
         const converted = toUniform(spec, value)
-        if (pipeline.setUniform) pipeline.setUniform(spec.uniform, converted)
-        else if (pipeline.globalUniforms) pipeline.globalUniforms[spec.uniform] = converted
+        applied.set(spec.uniform, converted)
+        apply(spec.uniform, converted)
+      }
+
+      // A stateful effect (feedback, a temporal filter, a simulation) draws
+      // each frame from the frames before it, so two captures in a row differ
+      // even when no control moved, and a control's effect cannot be told
+      // apart from that drift. Once two captures differ (measure below), every
+      // capture starts from the same state instead: the renderer rebuilds the
+      // program into a fresh pipeline (installProgramRebuild: no frame history,
+      // no feedback, temporal or persistent texture contents; the page's
+      // parameter values and uploaded inputs kept), the values the check set
+      // are applied again, and the same frames are rendered: one second of the
+      // loop at 60 fps steps, so a simulation that steps with deltaTime
+      // evolves, then time returns to 0 as the pause set it. The difference
+      // between two captures is then the output's true repeat noise. An output
+      // that does not change on its own is captured as it runs, and so is one
+      // whose renderer cannot rebuild its program.
+      let resetMode = false
+      const canReset = typeof w.__shadeRebuildProgram === 'function' &&
+        typeof renderer?.currentDsl === 'string' && renderer.currentDsl !== ''
+      async function resetState() {
+        if (!(await w.__shadeRebuildProgram())) throw new Error('The renderer could not rebuild its program for a capture')
+        pipeline = w[globals.renderingPipeline]
+        backend = pipeline.backend
+        for (const [uniform, value] of applied) apply(uniform, value)
+        await settle()
+        // This function is serialized into the page, so the frame count stays
+        // a literal.
+        const loop = typeof renderer.loopDuration === 'number' && renderer.loopDuration > 0 ? renderer.loopDuration : 10
+        for (let i = 0; i < 60; i++) renderer.render(i / (60 * loop))
+        if (w[globals.setPausedTime]) w[globals.setPausedTime](0)
+        else if (typeof renderer.syncTime === 'function') renderer.syncTime(0)
       }
       const defaultOf = (spec: any) => spec.default ?? spec.min
       // Values compare as the noisemaker UI compares them: vectors per
@@ -429,6 +474,12 @@ export async function testUniformResponsiveness(
         const reference = first ? await captureAll() : null
         if (!first || !reference) return null
         const noise = compare(first, reference)
+        if (responds(noise) && !resetMode && canReset) {
+          // The output changed on its own: measure again, and from here on,
+          // from a reset state.
+          resetMode = true
+          return measure(spec, setup, testValues)
+        }
         const unstable = responds(noise)
         let best: Delta | null = null
         let bestValue = testValues[0]

@@ -162,6 +162,11 @@ export interface ParityResult {
   yFlipMismatchPercent?: number
   yFlipMeanDiff?: number
   yFlipRatio?: number
+  // Frames each backend rendered, at fixed loop times, before its capture.
+  frames?: number
+  // Whether both legs rebuilt their program into a fresh pipeline before
+  // those frames, so the captures start from the same state.
+  stateReset?: boolean
   issues?: string[]
 }
 

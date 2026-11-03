@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { BrowserSession, effectSelectionProblem, requestIdentity } from '../../harness/browser-session.js'
 import type { EffectSelectionResult, ParityResult } from '../../harness/types.js'
+import { installProgramRebuild } from '../../harness/program-rebuild.js'
 import { getConfig } from '../../config.js'
 import { resolveEffectIds } from '../resolve-effects.js'
 import { toolResult } from '../tool-result.js'
@@ -17,21 +18,24 @@ export const testPixelParitySchema = {
   seed: z.number().optional().default(42).describe('Random seed for reproducible noise'),
 }
 
-// Let the live render loop draw real frames so the backend/effect is fully warm
-// before the paused capture. A freshly compiled effect needs a few real frames
-// before a paused render(0) yields a complete frame — cold reads come back
-// blank or partial (the source of the old non-deterministic 73%/100% numbers).
-async function warmUp(session: BrowserSession, frames = 6): Promise<void> {
-  const start = await session.page!.evaluate((globals: any) => {
+// Frames each backend renders before its capture: a fixed sequence at the
+// loop's 60 fps steps from time 0, the same on both backends. A freshly built
+// program needs a few frames before a read returns a complete frame, and a
+// feedback, temporal or simulation effect draws each frame from the frames
+// before it, so both legs must render the same frames at the same times. The
+// live loop cannot provide that: the number of frames it draws, and their
+// times, depend on the wall clock.
+export const PARITY_FRAMES = 8
+
+// Stop the live loop before the effect is selected, and give the page the
+// program rebuild (installProgramRebuild) before the selection uploads its
+// media and text inputs, so the rebuild can upload them again.
+async function prepareLeg(session: BrowserSession): Promise<void> {
+  await session.page!.evaluate((globals: any) => {
     const w = window as any
-    if (w[globals.setPaused]) w[globals.setPaused](false) // ensure the loop runs
-    return (w[globals.frameCount] as number) || 0
+    if (w[globals.setPaused]) w[globals.setPaused](true)
   }, session.globals)
-  await session.page!.waitForFunction(
-    ({ globals, target }: any) => (((window as any)[globals.frameCount] as number) || 0) >= target,
-    { globals: session.globals, target: start + frames },
-    { timeout: 30000, polling: 30 }
-  )
+  await session.page!.evaluate(installProgramRebuild, { globals: session.globals, timeout: session.timeoutMs })
 }
 
 // Capture the rendered frame by reading the OFFSCREEN render surface that
@@ -44,21 +48,46 @@ async function warmUp(session: BrowserSession, frames = 6): Promise<void> {
 // its rows are flipped to top-down to match WebGL2 (which flips internally) —
 // both end up in screen orientation, the same normalization the old canvas
 // capture used, keeping the comparison + Y-flip detector below valid.
+//
+// The capture starts from a reset state: after the selection, the renderer
+// rebuilds the program into a fresh pipeline (installProgramRebuild), with no
+// frame history and no feedback, temporal or persistent texture contents, and
+// with the page's parameter values and uploaded inputs. A paused selection
+// alone is not a reset: the noisemaker demo renders a frame for each control
+// it builds while paused, and on WebGPU some of those run before the programs
+// finish compiling. Then it renders PARITY_FRAMES frames at fixed times and
+// reads the last one. A renderer that cannot rebuild its program is captured
+// from the pipeline the selection built, and the result says so.
 async function captureSurface(
   session: BrowserSession,
   seed: number,
-): Promise<{ data: number[]; width: number; height: number } | null> {
-  return await session.page!.evaluate(async ({ globals, seed }) => {
+  frames: number,
+): Promise<{ data: number[]; width: number; height: number; stateReset: boolean } | null> {
+  return await session.page!.evaluate(async ({ globals, seed, frames }) => {
     const w = window as any
     if (w[globals.setPaused]) w[globals.setPaused](true)
+    const r = w[globals.canvasRenderer]
+    if (!r) return null
+    // A page can finish setting up a selection after it reports the build
+    // (the noisemaker demo draws a text input 50 ms later). Give it the six
+    // animation frames the live warm-up used to give, without rendering: the
+    // loop is paused.
+    await new Promise<void>((resolve) => {
+      const nextFrame = typeof w.requestAnimationFrame === 'function'
+        ? (cb: () => void) => w.requestAnimationFrame(cb)
+        : (cb: () => void) => setTimeout(cb, 16)
+      let left = 6
+      const tick = () => { if (--left <= 0) resolve(); else nextFrame(tick) }
+      nextFrame(tick)
+    })
+    const stateReset = typeof w.__shadeRebuildProgram === 'function' ? await w.__shadeRebuildProgram() : false
     if (w[globals.setPausedTime]) w[globals.setPausedTime](0)
     const p = w[globals.renderingPipeline]
     if (!p) return null
     if (p.globalUniforms) p.globalUniforms.seed = seed
     for (const pass of (p.graph?.passes || [])) if (pass.uniforms) pass.uniforms.seed = seed
-    const r = w[globals.canvasRenderer]
     const b = p.backend
-    if (!r || !b || !b.readPixels || !b.textures) return null
+    if (!b || !b.readPixels || !b.textures) return null
     const surf = p.graph?.renderSurface
     if (!surf) return null
 
@@ -85,9 +114,14 @@ async function captureSurface(
       return null
     }
 
+    // The same frames at the same loop times on both backends.
+    const loop = typeof r.loopDuration === 'number' && r.loopDuration > 0 ? r.loopDuration : 10
+    for (let i = 0; i < frames; i++) r.render(i / (60 * loop))
+    await b.device?.queue?.onSubmittedWorkDone?.()
+    // A read that finds no texture is retried without rendering again, so
+    // every capture shows the state after exactly `frames` frames.
     let px: any = null
     for (let attempt = 0; attempt < 6 && !px; attempt++) {
-      r.render(0); r.render(0)
       px = await readSurface()
       if (!px) await new Promise(res => setTimeout(res, 80))
     }
@@ -103,8 +137,8 @@ async function captureSurface(
       }
       data = flipped
     }
-    return { data: Array.from(data), width: px.width, height: px.height }
-  }, { globals: session.globals, seed })
+    return { data: Array.from(data), width: px.width, height: px.height, stateReset }
+  }, { globals: session.globals, seed, frames })
 }
 
 export async function testPixelParity(
@@ -140,15 +174,16 @@ export async function testPixelParity(
     const failed = await session.readPageIdentity()
     return parityError('WebGL2 leg', `Backend switch failed: ${errorMessage(err)}`, failed.backend ?? 'unknown', failed.effectId, [0, 0])
   }
+  await prepareLeg(session)
   let leg: EffectSelectionResult = await session.selectEffect(effectId)
   let problem = legProblem(leg, 'webgl2')
   if (problem) return parityError('WebGL2 leg', problem, leg.backend, leg.effectId, [0, 0])
-  await warmUp(session)
-  const glslPixels = await captureSurface(session, seed)
+  const glslCapture = await captureSurface(session, seed, PARITY_FRAMES)
 
-  if (!glslPixels) {
+  if (!glslCapture) {
     return parityError('WebGL2 leg', 'Failed to capture WebGL2', leg.backend, leg.effectId, [0, 0])
   }
+  const glslPixels = glslCapture
 
   // Switch to WebGPU and capture. Re-select the effect after the backend switch
   // so uniforms re-initialize from effect defaults under the new backend;
@@ -160,11 +195,11 @@ export async function testPixelParity(
     const failed = await session.readPageIdentity()
     return parityError('WebGPU leg', `Backend switch failed: ${errorMessage(err)}`, failed.backend ?? 'unknown', failed.effectId ?? leg.effectId, [glslPixels.width, glslPixels.height])
   }
+  await prepareLeg(session)
   leg = await session.selectEffect(effectId)
   problem = legProblem(leg, 'webgpu')
   if (problem) return parityError('WebGPU leg', problem, leg.backend, leg.effectId, [glslPixels.width, glslPixels.height])
-  await warmUp(session)
-  const wgslPixels = await captureSurface(session, seed)
+  const wgslCapture = await captureSurface(session, seed, PARITY_FRAMES)
 
   // Resume
   await session.page!.evaluate((globals) => {
@@ -172,9 +207,12 @@ export async function testPixelParity(
     if (w[globals.setPaused]) w[globals.setPaused](false)
   }, session.globals)
 
-  if (!wgslPixels) {
+  if (!wgslCapture) {
     return parityError('WebGPU leg', 'Failed to capture WebGPU', leg.backend, leg.effectId, [glslPixels.width, glslPixels.height])
   }
+  const wgslPixels = wgslCapture
+  // Both legs started from a reset state only when both rebuilt their program.
+  const stateReset = glslPixels.stateReset && wgslPixels.stateReset
 
   // Guard against comparing mismatched capture dimensions (would corrupt the
   // per-channel diff and Y-flip loops by indexing past the smaller buffer).
@@ -292,6 +330,8 @@ export async function testPixelParity(
     yFlipMismatchPercent: Math.round(yFlipPercent * 100) / 100,
     yFlipMeanDiff: Math.round(yFlipMeanDiff * 100) / 100,
     yFlipRatio: Math.round(yFlipRatio * 1000) / 1000,
+    frames: PARITY_FRAMES,
+    stateReset,
     issues,
     details: issues.length > 0
       ? issues.join('; ')
