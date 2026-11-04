@@ -248,6 +248,22 @@ try {
 if (!backendMismatchOk) failed++
 console.log(`browser-smoke: ${backendMismatchOk ? 'PASS' : 'FAIL'} backend fallback fails DSL batch`)
 
+// The frame grid must show a WebGPU program the same way up as WebGL2. A
+// triangle is not symmetric top to bottom, so its WebGL2 grid cell is the
+// reference for the WebGPU cell compared below when Chromium has a device.
+const orientationDsl = 'search synth\npolygon(sides: 3).write(o0)\nrender(o0)'
+const orientationOptions = { frames: [1], warmupFrames: 0, resolution: [64, 64], cellResolution: [64, 64] }
+const orientationGlSession = new BrowserSession({
+  backend: 'webgl2', blankPage: true, viewerRoot: NM, effectsDir: `${NM}/shaders/effects`,
+})
+let orientationGl
+try {
+  await orientationGlSession.setup()
+  orientationGl = await runDslProgram(orientationGlSession, orientationDsl, orientationOptions)
+} finally {
+  await orientationGlSession.teardown()
+}
+
 // The DSL page must have a trustworthy loopback origin for WebGPU without
 // loading the consumer's viewer. Exercise the real renderer when Chromium can
 // provide a device; otherwise, a WebGL fallback must still fail the request.
@@ -259,6 +275,8 @@ let webgpuRenderOk = false
 let webgpuUnavailable = false
 let webgpuCapability = ''
 let virtualRouteRemoved = false
+let orientation = null
+let orientationOk = false
 try {
   await webgpuSession.setup()
   const page = webgpuSession.page
@@ -301,9 +319,43 @@ try {
       && !result.captures[0].metrics.is_all_zero
       && result.image_data && Buffer.from(result.image_data, 'base64').subarray(0, 8)
         .equals(Buffer.from('89504e470d0a1a0a', 'hex'))
+    const gpu = await runDslProgram(webgpuSession, orientationDsl, orientationOptions)
+    if (orientationGl?.status === 'ok' && gpu.status === 'ok') {
+      orientation = await page.evaluate(async ({ gl, gpu }) => {
+        // The first grid cell starts at (left + gap, top + gap).
+        const cell = async (data) => {
+          const img = new Image()
+          img.src = `data:image/png;base64,${data}`
+          await img.decode()
+          const canvas = document.createElement('canvas')
+          canvas.width = img.width
+          canvas.height = img.height
+          const ctx = canvas.getContext('2d')
+          ctx.drawImage(img, 0, 0)
+          return ctx.getImageData(42, 28, 64, 64).data
+        }
+        const a = await cell(gl)
+        const b = await cell(gpu)
+        const differing = (flip) => {
+          let count = 0
+          for (let y = 0; y < 64; y++) {
+            for (let x = 0; x < 64; x++) {
+              const i = (y * 64 + x) * 4
+              const j = ((flip ? 63 - y : y) * 64 + x) * 4
+              if ([0, 1, 2].some(c => Math.abs(a[i + c] - b[j + c]) > 8)) count++
+            }
+          }
+          return count / 4096
+        }
+        return { same: differing(false), flipped: differing(true) }
+      }, { gl: orientationGl.image_data, gpu: gpu.image_data })
+    }
+    // The flipped comparison must differ, or the program could not show a flip.
+    orientationOk = !!orientation && orientation.same < 0.01 && orientation.flipped > 0.05
   } else {
     webgpuUnavailable = true
     webgpuRenderOk = result.status === 'error' && !result.image_data
+    orientationOk = orientationGl?.status === 'ok'
   }
 
   // The virtual document route is only active for setup navigation. The
@@ -315,8 +367,10 @@ try {
 if (!isolatedPageOk) failed++
 if (!webgpuRenderOk) failed++
 if (!virtualRouteRemoved) failed++
+if (!orientationOk) failed++
 console.log(`browser-smoke: ${isolatedPageOk ? 'PASS' : 'FAIL'} isolated secure loopback DSL page`)
 console.log(`browser-smoke: ${webgpuRenderOk ? webgpuUnavailable ? 'SKIP' : 'PASS' : 'FAIL'} genuine WebGPU DSL render${webgpuUnavailable ? ` (${webgpuCapability}; fallback rejected)` : ''}`)
+console.log(`browser-smoke: ${orientationOk ? webgpuUnavailable ? 'SKIP' : 'PASS' : 'FAIL'} WebGPU frame grid has the WebGL2 orientation ${JSON.stringify(orientation ?? { webgl2: orientationGl?.status ?? 'none' })}`)
 console.log(`browser-smoke: ${virtualRouteRemoved ? 'PASS' : 'FAIL'} virtual blank-page route removed`)
 
 if (failed) {

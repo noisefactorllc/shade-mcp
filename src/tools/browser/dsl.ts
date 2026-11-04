@@ -201,10 +201,20 @@ export async function runDslProgram(
                 if (!raw || !raw.width || !raw.height || raw.data.length !== raw.width * raw.height * 4) {
                   throw new Error(`Invalid pixels for surface ${surface}`)
                 }
-                const pixels = raw.data instanceof Float32Array
+                const readback = raw.data instanceof Float32Array
                   ? Uint8Array.from(raw.data, (value: number) => Math.round(Math.max(0, Math.min(1, value)) * 255))
                   : raw.data
-                if (!(pixels instanceof Uint8Array)) throw new Error(`Unsupported pixel type for surface ${surface}`)
+                if (!(readback instanceof Uint8Array)) throw new Error(`Unsupported pixel type for surface ${surface}`)
+                // The WebGL2 backend reader already returns rows top-down.
+                // WebGPU readback is bottom-up; flip the rows to top-down.
+                let pixels = readback
+                if (!pipeline.backend?.gl) {
+                  pixels = new Uint8Array(readback.length)
+                  const rowBytes = raw.width * 4
+                  for (let y = 0; y < raw.height; y++) {
+                    pixels.set(readback.subarray((raw.height - 1 - y) * rowBytes, (raw.height - y) * rowBytes), y * rowBytes)
+                  }
+                }
                 const image = new ImageData(new Uint8ClampedArray(pixels), raw.width, raw.height)
                 scratch.width = raw.width
                 scratch.height = raw.height
