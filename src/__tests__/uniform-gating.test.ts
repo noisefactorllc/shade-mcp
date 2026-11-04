@@ -195,6 +195,23 @@ describe('testUniformResponsiveness: controls inert at defaults', () => {
     expect(balance.enabled_with.tint).toEqual([0.75, 0.75, 0.75])
   })
 
+  it('keeps a dropdown at its start value when that value already opens a neq gate', async () => {
+    // A refraction direction gated on a blend mode that is not cloak (100):
+    // the start mode (mix, 10) already opens the gate, while the first other
+    // choice (add, 0) saturates the frame so the direction cannot show.
+    const specs = {
+      blendMode: { uniform: 'u_mode', type: 'int', default: 10, choices: { add: 0, mix: 10, cloak: 100 } },
+      dir: { uniform: 'u_dir', type: 'float', min: 0, max: 360, default: 0,
+        ui: { enabledBy: { param: 'blendMode', neq: 100 } } },
+    }
+    installFakeViewer(DEFAULT_GLOBALS, specs, (v) => (v.u_mode === 0 ? 1 : v.u_mode === 100 ? 0.6 : 0.3 + 0.4 * v.u_dir / 360))
+    const result = await testUniformResponsiveness(makeSession(), 'synth/noise')
+    const dir = result.uniforms.find((u: any) => u.name === 'dir')
+    expect(dir.responds).toBe(true)
+    expect(dir.enabled_with).toEqual({ blendMode: 10 })
+    expect(result.status).toBe('ok')
+  })
+
   it('reports a compile-time define as gated instead of measuring it', async () => {
     const specs = {
       amount: { uniform: 'u_amount', type: 'float', min: 0, max: 1, default: 0.5 },

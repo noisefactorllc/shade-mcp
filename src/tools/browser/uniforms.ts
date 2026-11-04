@@ -303,9 +303,13 @@ export async function testUniformResponsiveness(
           const base = startOf(cond.param)
           // A vector gate (a tint that must differ from neutral) opens with
           // each component moved a quarter of the range toward the far end.
+          // Any other gate keeps the start value when that already opens it
+          // (a blend mode that is not cloak stays at mix): another choice can
+          // change the frame so much (an additive blend saturating it) that
+          // the gated control cannot show.
           const options = Array.isArray(base)
             ? [base.map((c: number) => c + (c <= (lo + hi) / 2 ? 1 : -1) * (hi - lo) / 4)]
-            : (choices ?? [base, lo, hi])
+            : [base, ...(choices ?? [lo, hi])]
           for (const v of options) if (!banned.some((b) => same(v, b))) { candidates.push(v); break }
         }
         if (candidates.length === 0) candidates.push(gate.type === 'boolean' ? true : hi)
