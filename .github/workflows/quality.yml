@@ -1,13 +1,11 @@
 # Blocking quality gate for shade-mcp.
 #
-# ci.yml is the shared template used across repos: its test step is
-# continue-on-error by design, so dependency bumps auto-merge on
-# install + lint + build. That policy is deliberate and stays.
+# ci.yml is the shared template used across repos; its test step gates the
+# build.
 #
-# This workflow is additive and repo-specific: shade-mcp's unit tests need no
-# browser and run in about a second, so there is no reason for them to be
-# advisory here. It also runs the typecheck, which nothing else does — vitest
-# does not typecheck, so a suite can be fully green while tsc is failing.
+# This workflow is additive and repo-specific: it runs shade-mcp's unit tests
+# and the typecheck, which nothing else does — vitest does not typecheck, so a
+# suite can be fully green while tsc is failing.
 name: quality
 
 on:
