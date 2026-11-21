@@ -133,4 +133,35 @@ describe('browser-queue', () => {
     await waiter
     expect(admitted).toBe(true)
   })
+
+  it('a fractional browser limit admits only its whole-number capacity', async () => {
+    setMaxBrowsers(2.9)
+    expect(getMaxBrowsers()).toBe(2)
+    await acquireBrowserSlot()
+    await acquireBrowserSlot()
+    let admitted = false
+    const pending = acquireBrowserSlot().then(() => { admitted = true })
+    await Promise.resolve()
+    expect(admitted).toBe(false)
+    expect(getQueueDepth()).toBe(1)
+    releaseBrowserSlot()
+    await pending
+    expect(getActiveBrowsers()).toBe(2)
+    releaseBrowserSlot()
+    releaseBrowserSlot()
+    expect(getActiveBrowsers()).toBe(0)
+  })
+
+  it('reset clears active slots and custom capacity before the next session', async () => {
+    setMaxBrowsers(3)
+    await acquireBrowserSlot()
+    await acquireBrowserSlot()
+    resetBrowserQueue()
+    expect(getActiveBrowsers()).toBe(0)
+    expect(getQueueDepth()).toBe(0)
+    expect(getMaxBrowsers()).toBe(1)
+    await acquireBrowserSlot()
+    expect(getActiveBrowsers()).toBe(1)
+    releaseBrowserSlot()
+  })
 })

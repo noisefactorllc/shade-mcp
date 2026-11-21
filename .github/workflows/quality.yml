@@ -10,23 +10,7 @@ name: quality
 
 on:
   pull_request:
-    paths-ignore:
-      - '*.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/PULL_REQUEST_TEMPLATE*'
-      - '.github/FUNDING.yml'
-      - '.github/CODEOWNERS'
-      - '.editorconfig'
-      - 'docs/**'
   push:
-    paths-ignore:
-      - '*.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/PULL_REQUEST_TEMPLATE*'
-      - '.github/FUNDING.yml'
-      - '.github/CODEOWNERS'
-      - '.editorconfig'
-      - 'docs/**'
     branches: [main]
 
 permissions:
@@ -71,7 +55,7 @@ jobs:
       # --ignore-scripts skips the prepare build; typecheck and the unit tests
       # both read src/ directly and do not need dist/.
       - name: Install
-        run: npm ci --ignore-scripts
+        run: npm ci --ignore-scripts --no-bin-links
 
       - name: Typecheck
         run: npm run typecheck
@@ -117,10 +101,10 @@ jobs:
       # Scripts run here, unlike the job above: prepare builds dist/, and the
       # smoke test drives the built server.
       - name: Install and build
-        run: npm ci
+        run: npm ci --no-bin-links
 
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: node node_modules/playwright/cli.js install --with-deps chromium
 
       - name: Browser tools smoke test
         env:
@@ -179,7 +163,7 @@ jobs:
       # The same tarball release.yml publishes.
       - name: Build the release tarball
         run: |
-          npm ci
+          npm ci --no-bin-links
           tar -czf "$RUNNER_TEMP/shade-mcp-dist.tar.gz" -C dist .
 
       - name: Vendor the build into noisemaker

@@ -63,15 +63,15 @@
   },
   "scripts": {
     "prepare": "npm run build",
-    "build": "tsup && tsc -p tsconfig.build.json --emitDeclarationOnly",
+    "build": "node node_modules/tsup/dist/cli-default.js && node node_modules/typescript/bin/tsc -p tsconfig.build.json --emitDeclarationOnly",
     "postbuild": "node -e \"import{readFileSync as r,writeFileSync as w}from'fs';const f='dist/index.js';w(f,'#!/usr/bin/env node\\n'+r(f,'utf8'))\" && npm run check:dist && npm run check:drop",
     "check:dist": "node scripts/check-dist-externals.mjs",
     "check:drop": "node scripts/check-dist-selfcontained.mjs",
     "dev": "tsup --watch",
     "start": "node dist/index.js",
     "setup": "playwright install chromium",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "typecheck": "node node_modules/typescript/bin/tsc --noEmit",
+    "test": "node node_modules/vitest/vitest.mjs run",
     "test:watch": "vitest"
   },
   "engines": {

@@ -2,23 +2,7 @@ name: ci
 
 on:
   pull_request:
-    paths-ignore:
-      - '*.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/PULL_REQUEST_TEMPLATE*'
-      - '.github/FUNDING.yml'
-      - '.github/CODEOWNERS'
-      - '.editorconfig'
-      - 'docs/**'
   push:
-    paths-ignore:
-      - '*.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/PULL_REQUEST_TEMPLATE*'
-      - '.github/FUNDING.yml'
-      - '.github/CODEOWNERS'
-      - '.editorconfig'
-      - 'docs/**'
     branches: [main, preview]
 
 permissions:
@@ -50,7 +34,7 @@ jobs:
         # deps and do not need postinstall. If a repo's build genuinely needs a
         # rebuild, that fails only this dep-bump PR's gate (surfaces in triage),
         # never a production build.
-        run: npm ci --ignore-scripts
+        run: npm ci --ignore-scripts --no-bin-links
 
       - name: Lint
         run: |
@@ -74,16 +58,4 @@ jobs:
           fi
 
       - name: Unit tests
-        run: |
-          if jq -e '.scripts.test' package.json >/dev/null 2>&1; then
-            test_cmd=$(jq -r '.scripts.test' package.json)
-            if [ "$test_cmd" = 'echo "Error: no test specified" && exit 1' ]; then
-              echo "Placeholder test script — skipping"
-            elif echo "$test_cmd" | grep -qiE '(playwright|test-e2e)'; then
-              echo "E2E tests require browser/server — skipping in install CI"
-            else
-              npm test
-            fi
-          else
-            echo "No test script — skipping"
-          fi
+        run: npm test

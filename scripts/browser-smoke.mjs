@@ -368,6 +368,7 @@ if (!isolatedPageOk) failed++
 if (!webgpuRenderOk) failed++
 if (!virtualRouteRemoved) failed++
 if (!orientationOk) failed++
+if (webgpuUnavailable) failed++
 console.log(`browser-smoke: ${isolatedPageOk ? 'PASS' : 'FAIL'} isolated secure loopback DSL page`)
 console.log(`browser-smoke: ${webgpuRenderOk ? webgpuUnavailable ? 'SKIP' : 'PASS' : 'FAIL'} genuine WebGPU DSL render${webgpuUnavailable ? ` (${webgpuCapability}; fallback rejected)` : ''}`)
 console.log(`browser-smoke: ${orientationOk ? webgpuUnavailable ? 'SKIP' : 'PASS' : 'FAIL'} WebGPU frame grid has the WebGL2 orientation ${JSON.stringify(orientation ?? { webgl2: orientationGl?.status ?? 'none' })}`)
@@ -377,5 +378,5 @@ if (failed) {
   console.error(`browser-smoke: ${failed} check(s) failed`)
   process.exit(1)
 }
-console.log('browser-smoke: all available checks OK')
+console.log('browser-smoke: all checks OK')
 process.exit(0)
