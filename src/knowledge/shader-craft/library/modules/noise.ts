@@ -455,7 +455,7 @@ float hybridTerrainHeight(vec2 p, int octaves) {
 /// @range [0,1)
 /// @see Jimenez 2014, "Next Generation Post Processing in Call of Duty: Advanced Warfare"
 float interleavedGradientNoise(vec2 pixel) {
-    return fract(52.9829189 * fract(dot(pixel, vec2(0.06711056, 0.00583715))));
+    return fract(52.9829189 * fract(nmCraftAdd(pixel.x * 0.06711056, pixel.y * 0.00583715)));
 }
 float interleavedGradientNoise(vec2 pixel, int frame) {
     return interleavedGradientNoise(pixel + 5.588238 * float(frame % 64));
@@ -466,7 +466,7 @@ float interleavedGradientNoise(vec2 pixel, int frame) {
 /// @range [0,1)
 /// @see Martin Roberts, "The Unreasonable Effectiveness of Quasirandom Sequences"
 float r2Dither(vec2 pixel) {
-    float v = fract(dot(pixel, vec2(0.7548776662, 0.5698402910)));
+    float v = fract(nmCraftAdd(pixel.x * 0.7548776662, pixel.y * 0.5698402910));
     return v < 0.5 ? 2.0 * v : 2.0 - 2.0 * v;
 }
 `
@@ -970,7 +970,7 @@ fn hybridTerrainHeight(p: vec2f, octaves: i32) -> f32 {
 /// @range [0,1)
 /// @see Jimenez 2014, "Next Generation Post Processing in Call of Duty: Advanced Warfare"
 fn interleavedGradientNoise_f2(pixel: vec2f) -> f32 {
-    return fract(52.9829189 * fract(dot(pixel, vec2f(0.06711056, 0.00583715))));
+    return fract(52.9829189 * fract(nmCraftAdd(pixel.x * 0.06711056, pixel.y * 0.00583715)));
 }
 fn interleavedGradientNoise_f2i(pixel: vec2f, frame: i32) -> f32 {
     return interleavedGradientNoise_f2(pixel + 5.588238 * f32(frame % 64));
@@ -981,7 +981,7 @@ fn interleavedGradientNoise_f2i(pixel: vec2f, frame: i32) -> f32 {
 /// @range [0,1)
 /// @see Martin Roberts, "The Unreasonable Effectiveness of Quasirandom Sequences"
 fn r2Dither(pixel: vec2f) -> f32 {
-    let v = fract(dot(pixel, vec2f(0.7548776662, 0.5698402910)));
+    let v = fract(nmCraftAdd(pixel.x * 0.7548776662, pixel.y * 0.5698402910));
     return select(2.0 - 2.0 * v, 2.0 * v, v < 0.5);
 }
 `

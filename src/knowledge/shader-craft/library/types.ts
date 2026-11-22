@@ -41,6 +41,8 @@ export interface ShaderCraftParityTolerance {
 
 /** One entry of the library index. */
 export interface ShaderCraftLibrarySymbol {
+  /** Implementation dependency, excluded from discovery and public bundle summaries. */
+  internal?: boolean
   /** Unique id: the GLSL name with its parameter types, e.g. fbm(vec2,int), or the constant's name. */
   id: string
   kind: ShaderCraftSymbolKind

@@ -60,7 +60,7 @@ vec4 hexGrid(vec2 p) {
 /// @use hex borders, bevels, edge wear on tiles
 float hexEdgeDistance(vec2 local) {
     vec2 a = abs(local);
-    return 0.5 - max(a.x, dot(a, vec2(0.5, 0.8660254)));
+    return 0.5 - max(a.x, nmCraftAdd(a.x * 0.5, a.y * 0.8660254));
 }
 
 /// Truchet tiling of quarter-circle arcs, randomly flipped per cell. Returns signed distance to arcs of half-width w.
@@ -133,7 +133,7 @@ fn hexGrid(p: vec2f) -> vec4f {
 /// @use hex borders, bevels, edge wear on tiles
 fn hexEdgeDistance(local: vec2f) -> f32 {
     let a = abs(local);
-    return 0.5 - max(a.x, dot(a, vec2f(0.5, 0.8660254)));
+    return 0.5 - max(a.x, nmCraftAdd(a.x * 0.5, a.y * 0.8660254));
 }
 
 /// Truchet tiling of quarter-circle arcs, randomly flipped per cell. Returns signed distance to arcs of half-width w.

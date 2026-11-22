@@ -96,8 +96,8 @@ describe('shader-craft library modules', () => {
 
 describe('shader-craft library index', () => {
   it('has one entry per upstream symbol with unique ids and names', () => {
-    expect(SHADER_CRAFT_LIBRARY.filter(e => e.kind === 'function')).toHaveLength(211)
-    expect(SHADER_CRAFT_LIBRARY.filter(e => e.kind === 'const')).toHaveLength(6)
+    expect(SHADER_CRAFT_LIBRARY.filter(e => !e.internal && e.kind === 'function')).toHaveLength(211)
+    expect(SHADER_CRAFT_LIBRARY.filter(e => !e.internal && e.kind === 'const')).toHaveLength(6)
     expect(new Set(SHADER_CRAFT_LIBRARY.map(e => e.id)).size).toBe(SHADER_CRAFT_LIBRARY.length)
     expect(new Set(SHADER_CRAFT_LIBRARY.map(e => e.wgsl.name)).size).toBe(SHADER_CRAFT_LIBRARY.length)
     for (const entry of SHADER_CRAFT_LIBRARY) {
@@ -258,7 +258,7 @@ describe('shader-craft library credits', () => {
   it('credits every symbol to technique sources that exist', () => {
     const known = new Set(keys)
     for (const entry of SHADER_CRAFT_LIBRARY) {
-      expect(entry.credits.length, entry.id).toBeGreaterThan(0)
+      if (!entry.internal) expect(entry.credits.length, entry.id).toBeGreaterThan(0)
       for (const key of entry.credits) expect(known.has(key), `${entry.id}: ${key}`).toBe(true)
     }
     const credited = (key: string) => SHADER_CRAFT_LIBRARY.filter(e => e.credits.includes(key)).map(e => e.id)

@@ -22,6 +22,7 @@
 // Set SHADE_SWIFTSHADER=1 on machines without a GPU. Build dist/ first (npm run build).
 import { existsSync, writeFileSync, readFileSync } from 'node:fs'
 import { ProbeInputs, assertArgumentWords } from './craft-probe-inputs.mjs'
+import { precisionCases, productCases } from './craft-precision-fixtures.mjs'
 
 const NM = process.env.NOISEMAKER
 if (!NM || !existsSync(`${NM}/shaders/src/index.js`)) {
@@ -646,7 +647,102 @@ function scaledDifference(x, y) {
 }
 
 // ---------------------------------------------------------------------------------------------- main
-const entries = only ? LIBRARY.filter(entry => only.includes(entry.id)) : LIBRARY
+if (args.includes('--precision-only')) {
+  const datasets = [
+    { name: 'sum', rows: precisionCases(), operations: ['input0', 'input1', 'float0', 'float1', 'add', 'addFloat'] },
+    { name: 'product', rows: productCases(), operations: ['input0', 'input1', 'float0', 'float1', 'addProducts'] },
+  ]
+  for (const dataset of datasets) {
+    if (!dataset.rows.length || !dataset.operations.some(name => name.startsWith('add'))) {
+      throw new Error(`Empty precision arithmetic dataset: ${dataset.name}`)
+    }
+  }
+  const probes = [calibrationProbe()]
+  for (const dataset of datasets) for (let offset = 0; offset < dataset.rows.length; offset += PIXELS) {
+    const rows = dataset.rows.slice(offset, offset + PIXELS)
+    const inputs = new ProbeInputs({ width: W, height: H })
+    inputs.columns = [0, 1].map(column => Uint32Array.from({ length: PIXELS }, (_, i) => rows[i]?.[column] ?? 0))
+    const packed = inputs.pack(PIXELS)
+    for (const operation of dataset.operations) {
+      const source = {}
+      for (const language of ['glsl', 'wgsl']) {
+        const toFloat = word => language === 'glsl' ? `uintBitsToFloat(${word})` : `bitcast<f32>(${word})`
+        const toWord = value => language === 'glsl' ? `floatBitsToUint(${value})` : `bitcast<u32>(${value})`
+        const a = toFloat('probeInputWord(s, 0u)'), b = toFloat('probeInputWord(s, 1u)')
+        const expression = operation === 'add' ? 'nmCraftAddWords(probeInputWord(s, 0u), probeInputWord(s, 1u))'
+          : operation === 'addFloat' ? toWord(`nmCraftAdd(${a}, ${b})`)
+          : operation === 'addProducts' ? toWord(`nmCraftAdd(${a} * ${a}, ${b} * ${b})`)
+          : operation.startsWith('float') ? toWord(operation === 'float0' ? a : b)
+          : `probeInputWord(s, ${operation === 'input0' ? 0 : 1}u)`
+        const body = language === 'glsl' ? `#version 300 es
+precision highp float;
+precision highp int;
+${inputs.helpers(language)}
+out vec4 fragColor;
+void main() {
+    uint s = uint(gl_FragCoord.y) * ${W}u + uint(gl_FragCoord.x);
+    uint word = ${expression};
+    fragColor = vec4(float(word & 255u), float((word >> 8u) & 255u), float((word >> 16u) & 255u), float(word >> 24u)) / 255.0;
+}` : `@group(0) @binding(0) var<uniform> resolution: vec2f;
+${inputs.helpers(language)}
+@fragment fn main(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let s = u32(resolution.y - position.y) * ${W}u + u32(position.x);
+    let word = ${expression};
+    return vec4f(f32(word & 255u), f32((word >> 8u) & 255u), f32((word >> 16u) & 255u), f32(word >> 24u)) / 255.0;
+}`
+        source[language] = bundleShaderSource(body, language).source
+      }
+      probes.push({ id: `${dataset.name}:${operation}:${offset}`, page: `${dataset.name}:${offset}`, kind: 'precision', ...source,
+        inputData: { data: [...packed.data], width: packed.width, height: packed.height },
+        expected: rows.map(row => row[operation.endsWith('0') ? 0 : operation.endsWith('1') ? 1 : 2]), operation })
+    }
+  }
+  const report = { backends: {}, failures: [] }
+  for (const backend of ['webgl2', 'webgpu']) {
+    const { results, rendererName } = await renderAll(backend, probes)
+    const failures = []
+    const order = new Int32Array(PIXELS).fill(-1)
+    if (results[0].ok) {
+      for (const [at, word] of decode(results[0]).entries()) {
+        const index = word & 0xfff
+        if (word !== expectedCalibration(index) || order[index] !== -1) failures.push('Invalid pixel calibration')
+        order[index] = at
+      }
+    } else failures.push(results[0].error)
+    const comparisons = []
+    const verifiedInputs = new Set()
+    const calibrationValid = failures.length === 0 && order.every(at => at >= 0)
+    if (!calibrationValid) failures.push('Output interpretation blocked by invalid pixel calibration')
+    for (let i = 1; i < probes.length; i++) {
+      const probe = probes[i], result = results[i]
+      if (!calibrationValid) continue
+      const prerequisites = probe.operation === 'add' ? ['input0', 'input1'] : ['input0', 'input1', 'float0', 'float1']
+      if (probe.operation.startsWith('add') && prerequisites.some(operation => !verifiedInputs.has(`${probe.page}:${operation}`))) {
+        failures.push(`${probe.id}: output comparison blocked by unverified input words`)
+        continue
+      }
+      if (!result.ok) { failures.push(`${probe.id}: ${result.error}`); continue }
+      const words = decode(result)
+      const mismatches = probe.expected.flatMap((expected, sample) => words[order[sample]] === expected ? []
+        : [{ sample, expected: expected.toString(16), actual: words[order[sample]]?.toString(16) }])
+      comparisons.push({ id: probe.id, checked: probe.expected.length, mismatches: mismatches.length, first: mismatches[0] })
+      if (mismatches.length) failures.push(`${probe.id}: ${JSON.stringify(mismatches[0])}, ${mismatches.length} mismatches`)
+      else if (!probe.operation.startsWith('add')) verifiedInputs.add(`${probe.page}:${probe.operation}`)
+    }
+    for (const dataset of datasets) for (const operation of dataset.operations.filter(name => name.startsWith('add'))) {
+      const checked = comparisons.filter(result => result.id.startsWith(`${dataset.name}:${operation}:`)).reduce((sum, result) => sum + result.checked, 0)
+      if (checked !== dataset.rows.length) failures.push(`${dataset.name}:${operation}: incomplete arithmetic checks (${checked} of ${dataset.rows.length})`)
+    }
+    report.backends[backend] = { renderer: rendererName, comparisons }
+    report.failures.push(...failures.map(failure => `${backend}: ${failure}`))
+    console.log(`craft-precision: ${backend}, ${comparisons.reduce((n, c) => n + c.checked, 0)} checked words, ${failures.length} failures`)
+  }
+  if (jsonPath) writeFileSync(jsonPath, JSON.stringify(report, null, 2) + '\n')
+  for (const failure of report.failures) console.error(failure)
+  process.exit(report.failures.length ? 1 : 0)
+}
+
+const entries = LIBRARY.filter(entry => !entry.internal && (!only || only.includes(entry.id)))
 if (!bundledOnly && only && entries.length !== only.length) {
   console.error(`craft-library-parity: unknown ids: ${only.filter(id => !BY_ID.has(id)).join(', ')}`)
   process.exit(2)

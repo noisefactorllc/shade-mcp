@@ -88,8 +88,8 @@ vec3 tonemapACES(vec3 c) {
 /// @use quick previews, soft low-contrast looks
 vec3 tonemapReinhard(vec3 c, float white) {
     c = max(c, 0.0);
-    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-    float lt = l * (1.0 + l / (white * white)) / (1.0 + l);
+    float l = nmCraftAdd(nmCraftAdd(c.x * 0.2126, c.y * 0.7152), c.z * 0.0722);
+    float lt = l * nmCraftAdd(1.0, l / (white * white)) / nmCraftAdd(1.0, l);
     return clamp(c * (lt / max(l, 1e-6)), 0.0, 1.0);
 }
 `
@@ -183,8 +183,8 @@ fn tonemapACES(c: vec3f) -> vec3f {
 /// @use quick previews, soft low-contrast looks
 fn tonemapReinhard(c: vec3f, white: f32) -> vec3f {
     let c_ = max(c, vec3f(0.0));
-    let l = dot(c_, vec3f(0.2126, 0.7152, 0.0722));
-    let lt = l * (1.0 + l / (white * white)) / (1.0 + l);
+    let l = nmCraftAdd(nmCraftAdd(c_.x * 0.2126, c_.y * 0.7152), c_.z * 0.0722);
+    let lt = l * nmCraftAdd(1.0, l / (white * white)) / nmCraftAdd(1.0, l);
     return clamp(c_ * (lt / max(l, 1e-6)), vec3f(0.0), vec3f(1.0));
 }
 `

@@ -120,6 +120,12 @@ jobs:
           SHADE_SWIFTSHADER: '1'
         run: node scripts/authored-dsl-smoke.mjs
 
+      - name: Shader-craft arithmetic semantics
+        env:
+          NOISEMAKER: ${{ github.workspace }}/noisemaker
+          SHADE_SWIFTSHADER: '1'
+        run: node scripts/craft-library-parity.mjs --precision-only
+
       - name: Shader-craft library parity
         env:
           NOISEMAKER: ${{ github.workspace }}/noisemaker

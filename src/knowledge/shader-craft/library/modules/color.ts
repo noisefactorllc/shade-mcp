@@ -28,7 +28,11 @@ float luminance(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 
 /// Scale saturation around luminance: 0 = grey, 1 = unchanged, > 1 = more saturated.
 /// @use grading, fading distant objects, stylization
-vec3 saturation(vec3 c, float s) { return mix(vec3(luminance(c)), c, s); }
+vec3 saturation(vec3 c, float s) {
+    float l = nmCraftAdd(nmCraftAdd(c.x * 0.2126, c.y * 0.7152), c.z * 0.0722);
+    float grey = l * nmCraftAdd(1.0, -s);
+    return vec3(nmCraftAdd(grey, c.x * s), nmCraftAdd(grey, c.y * s), nmCraftAdd(grey, c.z * s));
+}
 
 /// Linear sRGB -> Oklab (L in [0,1], a/b around [-0.4, 0.4]). Matrices from Bjorn Ottosson (public domain / MIT).
 /// @use perceptual gradients, even-lightness palettes, hue and chroma edits
@@ -120,7 +124,11 @@ fn luminance(c: vec3f) -> f32 { return dot(c, vec3f(0.2126, 0.7152, 0.0722)); }
 
 /// Scale saturation around luminance: 0 = grey, 1 = unchanged, > 1 = more saturated.
 /// @use grading, fading distant objects, stylization
-fn saturation(c: vec3f, s: f32) -> vec3f { return mix(vec3f(luminance(c)), c, s); }
+fn saturation(c: vec3f, s: f32) -> vec3f {
+    let l = nmCraftAdd(nmCraftAdd(c.x * 0.2126, c.y * 0.7152), c.z * 0.0722);
+    let grey = l * nmCraftAdd(1.0, -s);
+    return vec3f(nmCraftAdd(grey, c.x * s), nmCraftAdd(grey, c.y * s), nmCraftAdd(grey, c.z * s));
+}
 
 /// Linear sRGB -> Oklab (L in [0,1], a/b around [-0.4, 0.4]). Matrices from Bjorn Ottosson (public domain / MIT).
 /// @use perceptual gradients, even-lightness palettes, hue and chroma edits

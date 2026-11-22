@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { scanTopLevel } from '../knowledge/shader-craft/source.js'
 import * as api from '../knowledge/shader-craft.js'
 import { SHADER_CRAFT_DOCUMENTS, SHADER_CRAFT_PROVENANCE } from '../knowledge/shader-craft/index.js'
 import { SHADER_CRAFT_LIBRARY, SHADER_CRAFT_CREDITS, searchShaderKnowledge } from '../knowledge/index.js'
@@ -43,9 +44,21 @@ describe('shader-craft Noisemaker examples', () => {
       for (const credit of SHADER_CRAFT_CREDITS.techniques) {
         expect(block.includes(`${credit.key}:`), credit.key).toBe(credits.has(credit.key))
       }
-      for (const symbol of symbols) for (const dependency of symbol[language].dependencies) {
-        expect(shader.added, `${symbol.id} requires ${dependency}`).toContain(dependency)
+      const declarations = scanTopLevel(shader.source, language)
+      const checked = new Set<string>()
+      const checkDependencies = (symbol: typeof SHADER_CRAFT_LIBRARY[number]) => {
+        if (checked.has(symbol.id)) return
+        checked.add(symbol.id)
+        for (const dependency of symbol[language].dependencies) {
+          const entry = SHADER_CRAFT_LIBRARY.find(e => e.id === dependency)!
+          if (entry.internal) {
+            expect(shader.added).not.toContain(dependency)
+            expect(declarations.filter(d => d.kind === entry.kind && d.name === entry[language].name)).toHaveLength(1)
+          } else expect(shader.added, `${symbol.id} requires ${dependency}`).toContain(dependency)
+          checkDependencies(entry)
+        }
       }
+      symbols.forEach(checkDependencies)
       if (symbols.some(e => e[language].requires.includes('ZERO'))) {
         expect(shader.source).toContain(language === 'glsl' ? '#define ZERO (min(int(seed), 0))' : 'ZERO = min(i32(seed), 0);')
         expect(shader.source).toMatch(language === 'glsl' ? /vec2 map\(vec3 p\)/ : /fn map\(p_arg: vec3f\)/)

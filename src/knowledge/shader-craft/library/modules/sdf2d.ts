@@ -19,7 +19,7 @@ float sdCircle(vec2 p, float r) { return length(p) - r; }
 /// @use panels, bars, windows, buttons, building silhouettes
 float sdBox(vec2 p, vec2 b) {
     vec2 d = abs(p) - b;
-    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+    return sqrt(dot2(max(d, 0.0))) + min(max(d.x, d.y), 0.0);
 }
 
 /// Rectangle with half-extents b and per-corner radii r = (top-right, bottom-right, top-left, bottom-left).
@@ -59,7 +59,7 @@ float sdUnevenCapsule(vec2 p, float r1, float r2, float h) {
 /// @use smiles, eyebrows, rainbows, gauges, progress rings, horseshoes
 float sdArc(vec2 p, vec2 sc, float ra, float rb) {
     p.x = abs(p.x);
-    return ((sc.y * p.x > sc.x * p.y) ? length(p - sc * ra) : abs(length(p) - ra)) - rb;
+    return ((sc.y * p.x > sc.x * p.y) ? sqrt(dot2(p - sc * ra)) : abs(sqrt(dot2(p)) - ra)) - rb;
 }
 
 /// Equilateral triangle with circumradius-like size r, pointing up.
@@ -80,13 +80,13 @@ float sdEquilateralTriangle(vec2 p, float r) {
 float sdTriangle(vec2 p, vec2 p0, vec2 p1, vec2 p2) {
     vec2 e0 = p1 - p0, e1 = p2 - p1, e2 = p0 - p2;
     vec2 v0 = p - p0, v1 = p - p1, v2 = p - p2;
-    vec2 pq0 = v0 - e0 * clamp(dot(v0, e0) / dot(e0, e0), 0.0, 1.0);
-    vec2 pq1 = v1 - e1 * clamp(dot(v1, e1) / dot(e1, e1), 0.0, 1.0);
-    vec2 pq2 = v2 - e2 * clamp(dot(v2, e2) / dot(e2, e2), 0.0, 1.0);
+    vec2 pq0 = v0 - e0 * clamp(nmCraftAdd(v0.x * e0.x, v0.y * e0.y) / nmCraftAdd(e0.x * e0.x, e0.y * e0.y), 0.0, 1.0);
+    vec2 pq1 = v1 - e1 * clamp(nmCraftAdd(v1.x * e1.x, v1.y * e1.y) / nmCraftAdd(e1.x * e1.x, e1.y * e1.y), 0.0, 1.0);
+    vec2 pq2 = v2 - e2 * clamp(nmCraftAdd(v2.x * e2.x, v2.y * e2.y) / nmCraftAdd(e2.x * e2.x, e2.y * e2.y), 0.0, 1.0);
     float s = sign(e0.x * e2.y - e0.y * e2.x);
-    vec2 d = min(min(vec2(dot(pq0, pq0), s * (v0.x * e0.y - v0.y * e0.x)),
-                     vec2(dot(pq1, pq1), s * (v1.x * e1.y - v1.y * e1.x))),
-                     vec2(dot(pq2, pq2), s * (v2.x * e2.y - v2.y * e2.x)));
+    vec2 d = min(min(vec2(nmCraftAdd(pq0.x * pq0.x, pq0.y * pq0.y), s * (v0.x * e0.y - v0.y * e0.x)),
+                     vec2(nmCraftAdd(pq1.x * pq1.x, pq1.y * pq1.y), s * (v1.x * e1.y - v1.y * e1.x))),
+                     vec2(nmCraftAdd(pq2.x * pq2.x, pq2.y * pq2.y), s * (v2.x * e2.y - v2.y * e2.x)));
     return -sqrt(d.x) * sign(d.y);
 }
 
@@ -96,13 +96,13 @@ float sdTriangle(vec2 p, vec2 p0, vec2 p1, vec2 p2) {
 float sdRegularPolygon(vec2 p, float r, int n) {
     float an = PI / float(n);
     vec2 acs = vec2(cos(an), sin(an));
-    float len = length(p);
+    float len = sqrt(dot2(p));
     if (len < 1e-12) return -r * acs.x;
     float bn = mod(atan(p.x, p.y), 2.0 * an) - an;
     p = len * vec2(cos(bn), abs(sin(bn)));
     p -= r * acs;
     p.y += clamp(-p.y, 0.0, r * acs.y);
-    return length(p) * sign(p.x);
+    return sqrt(dot2(p)) * sign(p.x);
 }
 
 /// Star with n points and outer radius r. m in [2, n] sets the inner angle: m = 2 is the spikiest and m = n is a regular n-gon.
@@ -158,8 +158,8 @@ float sdHeart(vec2 p) {
 float sdRhombus(vec2 p, vec2 b) {
     p = abs(p);
     vec2 t = b - 2.0 * p;
-    float h = clamp((t.x * b.x - t.y * b.y) / dot(b, b), -1.0, 1.0);
-    float d = length(p - 0.5 * b * vec2(1.0 - h, 1.0 + h));
+    float h = clamp((t.x * b.x - t.y * b.y) / nmCraftAdd(b.x * b.x, b.y * b.y), -1.0, 1.0);
+    float d = sqrt(dot2(p - 0.5 * b * vec2(1.0 - h, 1.0 + h)));
     return d * sign(p.x * b.y + p.y * b.x - b.x * b.y);
 }
 
@@ -168,10 +168,11 @@ float sdRhombus(vec2 p, vec2 b) {
 /// @approx
 /// @use eyes, pupils, ovals, shadows under objects, planet rings (with opOnion)
 float sdEllipse(vec2 p, vec2 r) {
-    float k0 = length(p / r);
-    float k1 = length(p / (r * r));
+    float k0 = sqrt(dot2(p / r));
+    float k1 = sqrt(dot2(p / (r * r)));
     if (k1 < 1e-8) return -min(r.x, r.y);
-    return k0 * (k0 - 1.0) / k1;
+    // Materialize the numerator before division to prevent reciprocal reassociation.
+    return nmCraftAdd(k0 * (k0 - 1.0), 0.0) / k1;
 }
 
 /// Unsigned distance to a quadratic Bezier curve A-B-C. Solves the closest-point cubic analytically.
@@ -183,12 +184,12 @@ float sdQuadraticBezier(vec2 pos, vec2 A, vec2 B, vec2 C) {
     vec2 b = A - 2.0 * B + C;
     vec2 c = a * 2.0;
     vec2 d = A - pos;
-    float bb = dot(b, b);
+    float bb = nmCraftAdd(b.x * b.x, b.y * b.y);
     if (bb < 1e-10) return sdSegment(pos, A, C);
     float kk = 1.0 / bb;
-    float kx = kk * dot(a, b);
-    float ky = kk * (2.0 * dot(a, a) + dot(d, b)) / 3.0;
-    float kz = kk * dot(d, a);
+    float kx = kk * nmCraftAdd(a.x * b.x, a.y * b.y);
+    float ky = kk * (2.0 * nmCraftAdd(a.x * a.x, a.y * a.y) + nmCraftAdd(d.x * b.x, d.y * b.y)) / 3.0;
+    float kz = kk * nmCraftAdd(d.x * a.x, d.y * a.y);
     float pp = ky - kx * kx;
     float q = kx * (2.0 * kx * kx - 3.0 * ky) + kz;
     float h = q * q + 4.0 * pp * pp * pp;
@@ -268,10 +269,10 @@ float sdParabolaSegment(vec2 p, float w, float h) {
 float sdEgg(vec2 p, float ra, float rb) {
     p.x = abs(p.x);
     float c = sqrt((2.0 * ra - rb) * (2.0 * ra - rb) - ra * ra);   // height of the cap center
-    if (p.y < 0.0) return length(p) - ra;
+    if (p.y < 0.0) return sqrt(dot2(p)) - ra;
     // past the line from the right arc's center (-ra, 0) through the cap center, the cap is nearest
-    if (ra * p.y > c * (p.x + ra)) return length(p - vec2(0.0, c)) - rb;
-    return length(p + vec2(ra, 0.0)) - 2.0 * ra;
+    if (ra * p.y > c * (p.x + ra)) return sqrt(dot2(p - vec2(0.0, c))) - rb;
+    return sqrt(dot2(p + vec2(ra, 0.0))) - 2.0 * ra;
 }
 `
 
@@ -291,7 +292,7 @@ fn sdCircle(p: vec2f, r: f32) -> f32 { return length(p) - r; }
 /// @use panels, bars, windows, buttons, building silhouettes
 fn sdBox_f2f2(p: vec2f, b: vec2f) -> f32 {
     let d = abs(p) - b;
-    return length(max(d, vec2f(0.0))) + min(max(d.x, d.y), 0.0);
+    return sqrt(dot2_f2(max(d, vec2f(0.0)))) + min(max(d.x, d.y), 0.0);
 }
 
 /// Rectangle with half-extents b and per-corner radii r = (top-right, bottom-right, top-left, bottom-left).
@@ -335,7 +336,7 @@ fn sdUnevenCapsule(p: vec2f, r1: f32, r2: f32, h: f32) -> f32 {
 fn sdArc(p: vec2f, sc: vec2f, ra: f32, rb: f32) -> f32 {
     var p_ = p;
     p_.x = abs(p_.x);
-    return select(abs(length(p_) - ra), length(p_ - sc * ra), sc.y * p_.x > sc.x * p_.y) - rb;
+    return select(abs(sqrt(dot2_f2(p_)) - ra), sqrt(dot2_f2(p_ - sc * ra)), sc.y * p_.x > sc.x * p_.y) - rb;
 }
 
 /// Equilateral triangle with circumradius-like size r, pointing up.
@@ -361,13 +362,13 @@ fn sdTriangle(p: vec2f, p0: vec2f, p1: vec2f, p2: vec2f) -> f32 {
     let v0 = p - p0;
     let v1 = p - p1;
     let v2 = p - p2;
-    let pq0 = v0 - e0 * clamp(dot(v0, e0) / dot(e0, e0), 0.0, 1.0);
-    let pq1 = v1 - e1 * clamp(dot(v1, e1) / dot(e1, e1), 0.0, 1.0);
-    let pq2 = v2 - e2 * clamp(dot(v2, e2) / dot(e2, e2), 0.0, 1.0);
+    let pq0 = v0 - e0 * clamp(nmCraftAdd(v0.x * e0.x, v0.y * e0.y) / nmCraftAdd(e0.x * e0.x, e0.y * e0.y), 0.0, 1.0);
+    let pq1 = v1 - e1 * clamp(nmCraftAdd(v1.x * e1.x, v1.y * e1.y) / nmCraftAdd(e1.x * e1.x, e1.y * e1.y), 0.0, 1.0);
+    let pq2 = v2 - e2 * clamp(nmCraftAdd(v2.x * e2.x, v2.y * e2.y) / nmCraftAdd(e2.x * e2.x, e2.y * e2.y), 0.0, 1.0);
     let s = sign(e0.x * e2.y - e0.y * e2.x);
-    let d = min(min(vec2f(dot(pq0, pq0), s * (v0.x * e0.y - v0.y * e0.x)),
-                    vec2f(dot(pq1, pq1), s * (v1.x * e1.y - v1.y * e1.x))),
-                    vec2f(dot(pq2, pq2), s * (v2.x * e2.y - v2.y * e2.x)));
+    let d = min(min(vec2f(nmCraftAdd(pq0.x * pq0.x, pq0.y * pq0.y), s * (v0.x * e0.y - v0.y * e0.x)),
+                    vec2f(nmCraftAdd(pq1.x * pq1.x, pq1.y * pq1.y), s * (v1.x * e1.y - v1.y * e1.x))),
+                    vec2f(nmCraftAdd(pq2.x * pq2.x, pq2.y * pq2.y), s * (v2.x * e2.y - v2.y * e2.x)));
     return -sqrt(d.x) * sign(d.y);
 }
 
@@ -377,7 +378,7 @@ fn sdTriangle(p: vec2f, p0: vec2f, p1: vec2f, p2: vec2f) -> f32 {
 fn sdRegularPolygon(p: vec2f, r: f32, n: i32) -> f32 {
     let an = PI / f32(n);
     let acs = vec2f(cos(an), sin(an));
-    let len = length(p);
+    let len = sqrt(dot2_f2(p));
     if (len < 1e-12) { return -r * acs.x; }
     let angle = atan2(p.x, p.y);
     let period = 2.0 * an;
@@ -385,7 +386,7 @@ fn sdRegularPolygon(p: vec2f, r: f32, n: i32) -> f32 {
     var p_ = len * vec2f(cos(bn), abs(sin(bn)));
     p_ -= r * acs;
     p_.y += clamp(-p_.y, 0.0, r * acs.y);
-    return length(p_) * sign(p_.x);
+    return sqrt(dot2_f2(p_)) * sign(p_.x);
 }
 
 /// Star with n points and outer radius r. m in [2, n] sets the inner angle: m = 2 is the spikiest and m = n is a regular n-gon.
@@ -444,8 +445,8 @@ fn sdHeart(p: vec2f) -> f32 {
 fn sdRhombus(p: vec2f, b: vec2f) -> f32 {
     let p_ = abs(p);
     let t = b - 2.0 * p_;
-    let h = clamp((t.x * b.x - t.y * b.y) / dot(b, b), -1.0, 1.0);
-    let d = length(p_ - 0.5 * b * vec2f(1.0 - h, 1.0 + h));
+    let h = clamp((t.x * b.x - t.y * b.y) / nmCraftAdd(b.x * b.x, b.y * b.y), -1.0, 1.0);
+    let d = sqrt(dot2_f2(p_ - 0.5 * b * vec2f(1.0 - h, 1.0 + h)));
     return d * sign(p_.x * b.y + p_.y * b.x - b.x * b.y);
 }
 
@@ -454,10 +455,11 @@ fn sdRhombus(p: vec2f, b: vec2f) -> f32 {
 /// @approx
 /// @use eyes, pupils, ovals, shadows under objects, planet rings (with opOnion)
 fn sdEllipse(p: vec2f, r: vec2f) -> f32 {
-    let k0 = length(p / r);
-    let k1 = length(p / (r * r));
+    let k0 = sqrt(dot2_f2(p / r));
+    let k1 = sqrt(dot2_f2(p / (r * r)));
     if (k1 < 1e-8) { return -min(r.x, r.y); }
-    return k0 * (k0 - 1.0) / k1;
+    // Materialize the numerator before division to prevent reciprocal reassociation.
+    return nmCraftAdd(k0 * (k0 - 1.0), 0.0) / k1;
 }
 
 /// Unsigned distance to a quadratic Bezier curve A-B-C. Solves the closest-point cubic analytically.
@@ -469,12 +471,12 @@ fn sdQuadraticBezier_f2f2f2f2(pos: vec2f, A: vec2f, B: vec2f, C: vec2f) -> f32 {
     let b = A - 2.0 * B + C;
     let c = a * 2.0;
     let d = A - pos;
-    let bb = dot(b, b);
+    let bb = nmCraftAdd(b.x * b.x, b.y * b.y);
     if (bb < 1e-10) { return sdSegment(pos, A, C); }
     let kk = 1.0 / bb;
-    let kx = kk * dot(a, b);
-    let ky = kk * (2.0 * dot(a, a) + dot(d, b)) / 3.0;
-    let kz = kk * dot(d, a);
+    let kx = kk * nmCraftAdd(a.x * b.x, a.y * b.y);
+    let ky = kk * (2.0 * nmCraftAdd(a.x * a.x, a.y * a.y) + nmCraftAdd(d.x * b.x, d.y * b.y)) / 3.0;
+    let kz = kk * nmCraftAdd(d.x * a.x, d.y * a.y);
     let pp = ky - kx * kx;
     let q = kx * (2.0 * kx * kx - 3.0 * ky) + kz;
     var h = q * q + 4.0 * pp * pp * pp;
@@ -558,9 +560,9 @@ fn sdEgg(p: vec2f, ra: f32, rb: f32) -> f32 {
     var p_ = p;
     p_.x = abs(p_.x);
     let c = sqrt((2.0 * ra - rb) * (2.0 * ra - rb) - ra * ra);   // height of the cap center
-    if (p_.y < 0.0) { return length(p_) - ra; }
+    if (p_.y < 0.0) { return sqrt(dot2_f2(p_)) - ra; }
     // past the line from the right arc's center (-ra, 0) through the cap center, the cap is nearest
-    if (ra * p_.y > c * (p_.x + ra)) { return length(p_ - vec2f(0.0, c)) - rb; }
-    return length(p_ + vec2f(ra, 0.0)) - 2.0 * ra;
+    if (ra * p_.y > c * (p_.x + ra)) { return sqrt(dot2_f2(p_ - vec2f(0.0, c))) - rb; }
+    return sqrt(dot2_f2(p_ + vec2f(ra, 0.0))) - 2.0 * ra;
 }
 `

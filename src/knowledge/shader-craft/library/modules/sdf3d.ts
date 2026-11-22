@@ -15,7 +15,7 @@ export const SDF3D_GLSL = `//! sdf3d: 3D signed distance primitives. Each one is
 /// Sphere of radius r.
 /// @exact
 /// @use heads, eyes, fruit, planets, bubbles, joints
-float sdSphere(vec3 p, float r) { return length(p) - r; }
+float sdSphere(vec3 p, float r) { return nmCraftAdd(sqrt(nmCraftAdd(nmCraftAdd(p.x * p.x, p.y * p.y), p.z * p.z)), -r); }
 
 /// Axis-aligned box with half-extents b.
 /// @exact
@@ -261,7 +261,7 @@ export const SDF3D_WGSL = `//! sdf3d: 3D signed distance primitives. Each one is
 /// Sphere of radius r.
 /// @exact
 /// @use heads, eyes, fruit, planets, bubbles, joints
-fn sdSphere(p: vec3f, r: f32) -> f32 { return length(p) - r; }
+fn sdSphere(p: vec3f, r: f32) -> f32 { return nmCraftAdd(sqrt(nmCraftAdd(nmCraftAdd(p.x * p.x, p.y * p.y), p.z * p.z)), -r); }
 
 /// Axis-aligned box with half-extents b.
 /// @exact

@@ -92,7 +92,7 @@ for (const lang of languages) describe(`shader-craft bundler ${lang}`, () => {
     }
     roots.forEach(e => visit(e.id))
     const result = bundleShaderSource(program(calls, lang), lang)
-    expect(result.added).toEqual(library.filter(e => ids.has(e.id)).map(e => e.id))
+    expect(result.added).toEqual(library.filter(e => !e.internal && ids.has(e.id)).map(e => e.id))
     const credits = [...new Set(library.filter(e => ids.has(e.id)).flatMap(e => e.credits))]
     expect(result.credits).toEqual(credits)
     expect(result.source).toContain('shader-skills')

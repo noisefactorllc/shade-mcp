@@ -4,8 +4,10 @@
 // every field against the module sources, so edit this file together with them.
 
 import type { ShaderCraftLibrarySymbol } from './types.js'
+import { PRECISION_SYMBOLS } from './precision.js'
 
 export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
+  ...PRECISION_SYMBOLS,
   {
     id: 'PI',
     kind: 'const',
@@ -48,8 +50,9 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     module: 'common',
     summary: 'Squared length.',
     credits: ['shader-skills'],
-    glsl: { name: 'dot2', signature: 'float dot2(vec2 v)', dependencies: [], requires: [] },
-    wgsl: { name: 'dot2_f2', signature: 'fn dot2_f2(v: vec2f) -> f32', dependencies: [], requires: [] },
+    adaptation: 'Round the products before integer-rounded addition to prevent backend-dependent contraction.',
+    glsl: { name: 'dot2', signature: 'float dot2(vec2 v)', dependencies: ['nmCraftAdd(float,float)'], requires: [] },
+    wgsl: { name: 'dot2_f2', signature: 'fn dot2_f2(v: vec2f) -> f32', dependencies: ['nmCraftAdd(float,float)'], requires: [] },
   },
   {
     id: 'dot2(vec3)',
@@ -589,8 +592,8 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     module: 'noise',
     summary: 'Interleaved gradient noise: cheap per-pixel noise whose 3x3 neighborhoods are nearly stratified.',
     credits: ['interleaved-gradient-noise'],
-    glsl: { name: 'interleavedGradientNoise', signature: 'float interleavedGradientNoise(vec2 pixel)', dependencies: [], requires: [] },
-    wgsl: { name: 'interleavedGradientNoise_f2', signature: 'fn interleavedGradientNoise_f2(pixel: vec2f) -> f32', dependencies: [], requires: [] },
+    glsl: { name: 'interleavedGradientNoise', signature: 'float interleavedGradientNoise(vec2 pixel)', dependencies: ['nmCraftAdd(float,float)'], requires: [] },
+    wgsl: { name: 'interleavedGradientNoise_f2', signature: 'fn interleavedGradientNoise_f2(pixel: vec2f) -> f32', dependencies: ['nmCraftAdd(float,float)'], requires: [] },
   },
   {
     id: 'interleavedGradientNoise(vec2,int)',
@@ -607,8 +610,8 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     module: 'noise',
     summary: 'R2 low-discrepancy dither mask (plastic-constant sequence), folded by a triangle wave for an even spread.',
     credits: ['r2-sequence'],
-    glsl: { name: 'r2Dither', signature: 'float r2Dither(vec2 pixel)', dependencies: [], requires: [] },
-    wgsl: { name: 'r2Dither', signature: 'fn r2Dither(pixel: vec2f) -> f32', dependencies: [], requires: [] },
+    glsl: { name: 'r2Dither', signature: 'float r2Dither(vec2 pixel)', dependencies: ['nmCraftAdd(float,float)'], requires: [] },
+    wgsl: { name: 'r2Dither', signature: 'fn r2Dither(pixel: vec2f) -> f32', dependencies: ['nmCraftAdd(float,float)'], requires: [] },
   },
   {
     id: 'triangleWave(vec2)',
@@ -661,8 +664,8 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     module: 'pattern',
     summary: 'Distance from a hexGrid local coordinate to its hexagon\'s edge (0.5 at the center, 0 on the edge).',
     credits: ['shader-skills'],
-    glsl: { name: 'hexEdgeDistance', signature: 'float hexEdgeDistance(vec2 local)', dependencies: [], requires: [] },
-    wgsl: { name: 'hexEdgeDistance', signature: 'fn hexEdgeDistance(local: vec2f) -> f32', dependencies: [], requires: [] },
+    glsl: { name: 'hexEdgeDistance', signature: 'float hexEdgeDistance(vec2 local)', dependencies: ['nmCraftAdd(float,float)'], requires: [] },
+    wgsl: { name: 'hexEdgeDistance', signature: 'fn hexEdgeDistance(local: vec2f) -> f32', dependencies: ['nmCraftAdd(float,float)'], requires: [] },
   },
   {
     id: 'truchetArcs(vec2,float)',
@@ -680,8 +683,8 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     summary: 'Sphere of radius r.',
     exactness: 'exact',
     credits: ['quilez-articles'],
-    glsl: { name: 'sdSphere', signature: 'float sdSphere(vec3 p, float r)', dependencies: [], requires: [] },
-    wgsl: { name: 'sdSphere', signature: 'fn sdSphere(p: vec3f, r: f32) -> f32', dependencies: [], requires: [] },
+    glsl: { name: 'sdSphere', signature: 'float sdSphere(vec3 p, float r)', dependencies: ['nmCraftAdd(float,float)'], requires: [] },
+    wgsl: { name: 'sdSphere', signature: 'fn sdSphere(p: vec3f, r: f32) -> f32', dependencies: ['nmCraftAdd(float,float)'], requires: [] },
   },
   {
     id: 'sdBox(vec3,vec3)',
@@ -924,8 +927,8 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     summary: 'Axis-aligned rectangle with half-extents b.',
     exactness: 'exact',
     credits: ['quilez-articles'],
-    glsl: { name: 'sdBox', signature: 'float sdBox(vec2 p, vec2 b)', dependencies: [], requires: [] },
-    wgsl: { name: 'sdBox_f2f2', signature: 'fn sdBox_f2f2(p: vec2f, b: vec2f) -> f32', dependencies: [], requires: [] },
+    glsl: { name: 'sdBox', signature: 'float sdBox(vec2 p, vec2 b)', dependencies: ['dot2(vec2)'], requires: [] },
+    wgsl: { name: 'sdBox_f2f2', signature: 'fn sdBox_f2f2(p: vec2f, b: vec2f) -> f32', dependencies: ['dot2(vec2)'], requires: [] },
   },
   {
     id: 'sdRoundedBox(vec2,vec2,vec4)',
@@ -964,8 +967,8 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     summary: 'Circular arc symmetric about +Y.',
     exactness: 'exact',
     credits: ['quilez-articles'],
-    glsl: { name: 'sdArc', signature: 'float sdArc(vec2 p, vec2 sc, float ra, float rb)', dependencies: [], requires: [] },
-    wgsl: { name: 'sdArc', signature: 'fn sdArc(p: vec2f, sc: vec2f, ra: f32, rb: f32) -> f32', dependencies: [], requires: [] },
+    glsl: { name: 'sdArc', signature: 'float sdArc(vec2 p, vec2 sc, float ra, float rb)', dependencies: ['dot2(vec2)'], requires: [] },
+    wgsl: { name: 'sdArc', signature: 'fn sdArc(p: vec2f, sc: vec2f, ra: f32, rb: f32) -> f32', dependencies: ['dot2(vec2)'], requires: [] },
   },
   {
     id: 'sdEquilateralTriangle(vec2,float)',
@@ -984,8 +987,8 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     summary: 'Arbitrary triangle p0, p1, p2 (any winding).',
     exactness: 'exact',
     credits: ['quilez-articles'],
-    glsl: { name: 'sdTriangle', signature: 'float sdTriangle(vec2 p, vec2 p0, vec2 p1, vec2 p2)', dependencies: [], requires: [] },
-    wgsl: { name: 'sdTriangle', signature: 'fn sdTriangle(p: vec2f, p0: vec2f, p1: vec2f, p2: vec2f) -> f32', dependencies: [], requires: [] },
+    glsl: { name: 'sdTriangle', signature: 'float sdTriangle(vec2 p, vec2 p0, vec2 p1, vec2 p2)', dependencies: ['nmCraftAdd(float,float)'], requires: [] },
+    wgsl: { name: 'sdTriangle', signature: 'fn sdTriangle(p: vec2f, p0: vec2f, p1: vec2f, p2: vec2f) -> f32', dependencies: ['nmCraftAdd(float,float)'], requires: [] },
   },
   {
     id: 'sdRegularPolygon(vec2,float,int)',
@@ -994,8 +997,8 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     summary: 'Regular n-gon with circumradius r, one vertex pointing up.',
     exactness: 'exact',
     credits: ['quilez-articles'],
-    glsl: { name: 'sdRegularPolygon', signature: 'float sdRegularPolygon(vec2 p, float r, int n)', dependencies: ['PI'], requires: [] },
-    wgsl: { name: 'sdRegularPolygon', signature: 'fn sdRegularPolygon(p: vec2f, r: f32, n: i32) -> f32', dependencies: ['PI'], requires: [] },
+    glsl: { name: 'sdRegularPolygon', signature: 'float sdRegularPolygon(vec2 p, float r, int n)', dependencies: ['PI', 'dot2(vec2)'], requires: [] },
+    wgsl: { name: 'sdRegularPolygon', signature: 'fn sdRegularPolygon(p: vec2f, r: f32, n: i32) -> f32', dependencies: ['PI', 'dot2(vec2)'], requires: [] },
   },
   {
     id: 'sdStar(vec2,float,int,float)',
@@ -1044,8 +1047,8 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     summary: 'Rhombus with half-diagonals b.',
     exactness: 'exact',
     credits: ['quilez-articles'],
-    glsl: { name: 'sdRhombus', signature: 'float sdRhombus(vec2 p, vec2 b)', dependencies: [], requires: [] },
-    wgsl: { name: 'sdRhombus', signature: 'fn sdRhombus(p: vec2f, b: vec2f) -> f32', dependencies: [], requires: [] },
+    glsl: { name: 'sdRhombus', signature: 'float sdRhombus(vec2 p, vec2 b)', dependencies: ['nmCraftAdd(float,float)', 'dot2(vec2)'], requires: [] },
+    wgsl: { name: 'sdRhombus', signature: 'fn sdRhombus(p: vec2f, b: vec2f) -> f32', dependencies: ['nmCraftAdd(float,float)', 'dot2(vec2)'], requires: [] },
   },
   {
     id: 'sdEllipse(vec2,vec2)',
@@ -1054,8 +1057,8 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     summary: 'Ellipse with semi-axes r.',
     exactness: 'approx',
     credits: ['quilez-articles'],
-    glsl: { name: 'sdEllipse', signature: 'float sdEllipse(vec2 p, vec2 r)', dependencies: [], requires: [] },
-    wgsl: { name: 'sdEllipse', signature: 'fn sdEllipse(p: vec2f, r: vec2f) -> f32', dependencies: [], requires: [] },
+    glsl: { name: 'sdEllipse', signature: 'float sdEllipse(vec2 p, vec2 r)', dependencies: ['dot2(vec2)', 'nmCraftAdd(float,float)'], requires: [] },
+    wgsl: { name: 'sdEllipse', signature: 'fn sdEllipse(p: vec2f, r: vec2f) -> f32', dependencies: ['dot2(vec2)', 'nmCraftAdd(float,float)'], requires: [] },
   },
   {
     id: 'sdQuadraticBezier(vec2,vec2,vec2,vec2)',
@@ -1064,8 +1067,8 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     summary: 'Unsigned distance to a quadratic Bezier curve A-B-C.',
     exactness: 'exact',
     credits: ['quilez-articles'],
-    glsl: { name: 'sdQuadraticBezier', signature: 'float sdQuadraticBezier(vec2 pos, vec2 A, vec2 B, vec2 C)', dependencies: ['dot2(vec2)', 'sdSegment(vec2,vec2,vec2)'], requires: [] },
-    wgsl: { name: 'sdQuadraticBezier_f2f2f2f2', signature: 'fn sdQuadraticBezier_f2f2f2f2(pos: vec2f, A: vec2f, B: vec2f, C: vec2f) -> f32', dependencies: ['dot2(vec2)', 'sdSegment(vec2,vec2,vec2)'], requires: [] },
+    glsl: { name: 'sdQuadraticBezier', signature: 'float sdQuadraticBezier(vec2 pos, vec2 A, vec2 B, vec2 C)', dependencies: ['dot2(vec2)', 'sdSegment(vec2,vec2,vec2)', 'nmCraftAdd(float,float)'], requires: [] },
+    wgsl: { name: 'sdQuadraticBezier_f2f2f2f2', signature: 'fn sdQuadraticBezier_f2f2f2f2(pos: vec2f, A: vec2f, B: vec2f, C: vec2f) -> f32', dependencies: ['dot2(vec2)', 'sdSegment(vec2,vec2,vec2)', 'nmCraftAdd(float,float)'], requires: [] },
   },
   {
     id: 'sdPie(vec2,vec2,float)',
@@ -1111,8 +1114,8 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     summary: 'Egg built from four tangent arcs (Moss-style): bottom radius ra, top cap radius rb.',
     exactness: 'exact',
     credits: ['moss-egg'],
-    glsl: { name: 'sdEgg', signature: 'float sdEgg(vec2 p, float ra, float rb)', dependencies: [], requires: [] },
-    wgsl: { name: 'sdEgg', signature: 'fn sdEgg(p: vec2f, ra: f32, rb: f32) -> f32', dependencies: [], requires: [] },
+    glsl: { name: 'sdEgg', signature: 'float sdEgg(vec2 p, float ra, float rb)', dependencies: ['dot2(vec2)'], requires: [] },
+    wgsl: { name: 'sdEgg', signature: 'fn sdEgg(p: vec2f, ra: f32, rb: f32) -> f32', dependencies: ['dot2(vec2)'], requires: [] },
   },
   {
     id: 'opUnion(float,float)',
@@ -1508,8 +1511,8 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     module: 'intersect',
     summary: 'Ray vs plane dot(p, n) + h = 0 (unit n).',
     credits: ['quilez-articles'],
-    glsl: { name: 'iPlane', signature: 'float iPlane(vec3 ro, vec3 rd, vec3 n, float h)', dependencies: [], requires: [] },
-    wgsl: { name: 'iPlane', signature: 'fn iPlane(ro: vec3f, rd: vec3f, n: vec3f, h: f32) -> f32', dependencies: [], requires: [] },
+    glsl: { name: 'iPlane', signature: 'float iPlane(vec3 ro, vec3 rd, vec3 n, float h)', dependencies: ['nmCraftAdd(float,float)'], requires: [] },
+    wgsl: { name: 'iPlane', signature: 'fn iPlane(ro: vec3f, rd: vec3f, n: vec3f, h: f32) -> f32', dependencies: ['nmCraftAdd(float,float)'], requires: [] },
   },
   {
     id: 'iSphere(vec3,vec3,vec3,float)',
@@ -1784,8 +1787,8 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     module: 'color',
     summary: 'Scale saturation around luminance: 0 = grey, 1 = unchanged, > 1 = more saturated.',
     credits: ['shader-skills'],
-    glsl: { name: 'saturation', signature: 'vec3 saturation(vec3 c, float s)', dependencies: ['luminance(vec3)'], requires: [] },
-    wgsl: { name: 'saturation', signature: 'fn saturation(c: vec3f, s: f32) -> vec3f', dependencies: ['luminance(vec3)'], requires: [] },
+    glsl: { name: 'saturation', signature: 'vec3 saturation(vec3 c, float s)', dependencies: ['nmCraftAdd(float,float)'], requires: [] },
+    wgsl: { name: 'saturation', signature: 'fn saturation(c: vec3f, s: f32) -> vec3f', dependencies: ['nmCraftAdd(float,float)'], requires: [] },
   },
   {
     id: 'linearSrgbToOklab(vec3)',
@@ -1897,8 +1900,8 @@ export const SHADER_CRAFT_LIBRARY: ShaderCraftLibrarySymbol[] = [
     module: 'tonemap',
     summary: 'Extended Reinhard on luminance: maps `white` to 1 and preserves hue.',
     credits: ['shader-skills'],
-    glsl: { name: 'tonemapReinhard', signature: 'vec3 tonemapReinhard(vec3 c, float white)', dependencies: [], requires: [] },
-    wgsl: { name: 'tonemapReinhard', signature: 'fn tonemapReinhard(c: vec3f, white: f32) -> vec3f', dependencies: [], requires: [] },
+    glsl: { name: 'tonemapReinhard', signature: 'vec3 tonemapReinhard(vec3 c, float white)', dependencies: ['nmCraftAdd(float,float)'], requires: [] },
+    wgsl: { name: 'tonemapReinhard', signature: 'fn tonemapReinhard(c: vec3f, white: f32) -> vec3f', dependencies: ['nmCraftAdd(float,float)'], requires: [] },
   },
   {
     id: 'phaseIsotropic()',

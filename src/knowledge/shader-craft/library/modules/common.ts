@@ -1,3 +1,5 @@
+import { PRECISION_GLSL, PRECISION_WGSL } from '../precision.js'
+
 // Adapted for Noisemaker effects from gokayfem/shader-skills skills/shader-art-coding/glsl/common.glsl
 // at e09bc993bf04201f26c03c87c89210e9b472f526 (MIT, Copyright (c) 2026 gokayfem).
 // The WGSL twin translates the same code. The licence text is in ../../license.ts; the upstream record is
@@ -6,6 +8,8 @@
 export const COMMON_GLSL = `//! common: constants, rotation, remapping and shaping functions.
 //! Target: GLSL ES 3.00 as Noisemaker effects use it (WebGL2). Every function here is original and MIT licensed.
 //! Programs that use the library declare   precision highp float; precision highp int;   (the hashes need 32-bit uint).
+
+${PRECISION_GLSL}
 
 const float PI = 3.14159265358979;
 const float TAU = 6.28318530717959;
@@ -17,7 +21,7 @@ vec3 saturate(vec3 x) { return clamp(x, 0.0, 1.0); }
 
 /// Squared length.
 /// @use cheap distance comparisons, SDF internals
-float dot2(vec2 v) { return dot(v, v); }
+float dot2(vec2 v) { return nmCraftAdd(v.x * v.x, v.y * v.y); }
 float dot2(vec3 v) { return dot(v, v); }
 
 /// 2D rotation matrix. \`rot2(a) * v\` rotates v counter-clockwise by a radians.
@@ -85,6 +89,8 @@ export const COMMON_WGSL = `//! common: constants, rotation, remapping and shapi
 //! Target: WGSL as Noisemaker effects use it (WebGPU); the twin of the GLSL module. Every function here is original
 //! and MIT licensed.
 
+${PRECISION_WGSL}
+
 const PI: f32 = 3.14159265358979;
 const TAU: f32 = 6.28318530717959;
 
@@ -95,7 +101,7 @@ fn saturate_f3(x: vec3f) -> vec3f { return clamp(x, vec3f(0.0), vec3f(1.0)); }
 
 /// Squared length.
 /// @use cheap distance comparisons, SDF internals
-fn dot2_f2(v: vec2f) -> f32 { return dot(v, v); }
+fn dot2_f2(v: vec2f) -> f32 { return nmCraftAdd(v.x * v.x, v.y * v.y); }
 fn dot2_f3(v: vec3f) -> f32 { return dot(v, v); }
 
 /// 2D rotation matrix. \`rot2(a) * v\` rotates v counter-clockwise by a radians.

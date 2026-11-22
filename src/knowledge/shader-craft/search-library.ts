@@ -15,7 +15,7 @@ export function searchShaderLibrary(query: string, options: ShaderLibrarySearchO
   const language = options.language ?? 'glsl', words = query.toLowerCase().match(/[\w]+/g) ?? []
   const limit = Number.isFinite(options.limit) ? Math.max(0, Math.floor(options.limit!)) : 15
   if (!words.length || !limit) return []
-  return SHADER_CRAFT_LIBRARY.map(e => {
+  return SHADER_CRAFT_LIBRARY.filter(e => !e.internal).map(e => {
     const name = e[language].name.toLowerCase(), text = `${e[language].signature} ${e.summary} ${e.module}`.toLowerCase()
     const score = (e.kind === 'function' ? 0.1 : 0) + words.reduce((score, word) => score + (name === word ? 10 : name.includes(word) ? 5 : 0) + (text.includes(word) ? 1 : 0), 0)
     return { score, result: { id: e.id, language, name: e[language].name, signature: e[language].signature, summary: e.summary, module: e.module } }

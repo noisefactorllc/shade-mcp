@@ -11,9 +11,9 @@ export const INTERSECT_GLSL = `//! intersect: analytic ray-primitive intersectio
 /// Ray vs plane dot(p, n) + h = 0 (unit n). Returns t, which is negative when the plane is behind the ray or parallel to it.
 /// @use floors, water, mirrors, clipping marches to a ground plane
 float iPlane(vec3 ro, vec3 rd, vec3 n, float h) {
-    float denom = dot(rd, n);
+    float denom = nmCraftAdd(nmCraftAdd(rd.x * n.x, rd.y * n.y), rd.z * n.z);
     if (abs(denom) < 1e-8) return -1.0;
-    return -(dot(ro, n) + h) / denom;
+    return -nmCraftAdd(nmCraftAdd(nmCraftAdd(ro.x * n.x, ro.y * n.y), ro.z * n.z), h) / denom;
 }
 
 /// Ray vs sphere centered at c with radius r. Returns vec2(tNear, tFar), or vec2(-1) on a miss.
@@ -55,9 +55,9 @@ export const INTERSECT_WGSL = `//! intersect: analytic ray-primitive intersectio
 /// Ray vs plane dot(p, n) + h = 0 (unit n). Returns t, which is negative when the plane is behind the ray or parallel to it.
 /// @use floors, water, mirrors, clipping marches to a ground plane
 fn iPlane(ro: vec3f, rd: vec3f, n: vec3f, h: f32) -> f32 {
-    let denom = dot(rd, n);
+    let denom = nmCraftAdd(nmCraftAdd(rd.x * n.x, rd.y * n.y), rd.z * n.z);
     if (abs(denom) < 1e-8) { return -1.0; }
-    return -(dot(ro, n) + h) / denom;
+    return -nmCraftAdd(nmCraftAdd(nmCraftAdd(ro.x * n.x, ro.y * n.y), ro.z * n.z), h) / denom;
 }
 
 /// Ray vs sphere centered at c with radius r. Returns vec2f(tNear, tFar), or vec2f(-1) on a miss.

@@ -54,6 +54,16 @@ export function bundleShaderSource(source: string, language: ShaderCraftLanguage
   const macros = new Set(items.filter(item => item.directive === 'define').map(item => item.name))
   const own = (id: string) => {
     const e = byId.get(id)!
+    if (e.internal) {
+      const normalized = (text: string) => tokenize(text, language).map(token => token.text).join(' ')
+      if (macros.has(e[language].name)) throw new Error(`Cannot override internal shader helper ${e[language].name}`)
+      for (const item of items.filter(item => item.name === e[language].name)) {
+        const expected = item.kind === 'prototype' ? `${e[language].signature};` : getShaderCraftSymbolSource(id, language)
+        if (item.depth !== 0 || !['function', 'prototype'].includes(item.kind) || normalized(source.slice(item.start, item.end)) !== normalized(expected)) {
+          throw new Error(`Cannot override internal shader helper ${e[language].name}`)
+        }
+      }
+    }
     return (language === 'glsl' && macros.has(e.glsl.name)) ||
       definitions.has(language === 'glsl' && e.kind === 'function' ? e.id : e[language].name)
   }
@@ -88,9 +98,10 @@ export function bundleShaderSource(source: string, language: ShaderCraftLanguage
       include(entry.id)
     }
   })
-  const added = SHADER_CRAFT_LIBRARY.filter(e => required.has(e.id)).map(e => e.id)
-  if (!added.length) return { source, added: [], credits: [] }
-  const requires = new Set(added.flatMap(id => byId.get(id)![language].requires))
+  const emitted = SHADER_CRAFT_LIBRARY.filter(e => required.has(e.id)).map(e => e.id)
+  const added = emitted.filter(id => !byId.get(id)!.internal)
+  if (!emitted.length) return { source, added: [], credits: [] }
+  const requires = new Set(emitted.flatMap(id => byId.get(id)![language].requires))
   for (const name of requires) {
     if (!definedNames.has(name)) throw new Error(`Shader-craft requires program symbol ${name}: ${SHADER_CRAFT_LIBRARY_PROGRAM_SYMBOLS.find(p => p.name === name)?.[language]}`)
   }
@@ -101,10 +112,10 @@ export function bundleShaderSource(source: string, language: ShaderCraftLanguage
   const credits = [...new Set(added.flatMap(id => byId.get(id)!.credits))]
   const oldBlock = findCreditBlock(source)
   const oldIds: string[] = oldBlock ? includedSymbolIds(source.slice(oldBlock.start, oldBlock.end)) : []
-  const allIds = SHADER_CRAFT_LIBRARY.filter(e => oldIds.includes(e.id) || required.has(e.id)).map(e => e.id)
+  const allIds = SHADER_CRAFT_LIBRARY.filter(e => !e.internal && (oldIds.includes(e.id) || required.has(e.id))).map(e => e.id)
   const allCredits = new Set(allIds.flatMap(id => byId.get(id)!.credits))
-  const header = `/* shader-craft credits\n${SHADER_CRAFT_CREDITS.adaptedFrom}\nIncluded symbols: ${JSON.stringify(allIds)}\n` +
-    SHADER_CRAFT_CREDITS.techniques.filter(c => allCredits.has(c.key)).map(c => `${c.key}: ${c.source}; ${c.terms}.`).join('\n') + '\n*/'
+  const header = allIds.length ? `/* shader-craft credits\n${SHADER_CRAFT_CREDITS.adaptedFrom}\nIncluded symbols: ${JSON.stringify(allIds)}\n` +
+    SHADER_CRAFT_CREDITS.techniques.filter(c => allCredits.has(c.key)).map(c => `${c.key}: ${c.source}; ${c.terms}.`).join('\n') + '\n*/' : ''
   const firstFunction = items.find(item => item.kind === 'function')
   let cut = firstFunction?.start ?? source.length
   // Never hide library declarations inside a program's preprocessor conditional.
@@ -114,7 +125,7 @@ export function bundleShaderSource(source: string, language: ShaderCraftLanguage
   }
   // GLSL module initializers may reference library constants. Keep ordinary declarations after the library,
   // while preserving version/precision/uniform/input/output directives and the ZERO program definition.
-  const addedNames = new Set(added.map(id => byId.get(id)![language].name))
+  const addedNames = new Set(emitted.map(id => byId.get(id)![language].name))
   if (language === 'glsl') for (const item of items) {
     if (item.start >= cut) break
     if (item.kind === 'declaration' && !['precision', 'uniform', 'in', 'out', 'layout'].includes(item.storage ?? '') && item.name !== 'ZERO' &&
@@ -126,7 +137,7 @@ export function bundleShaderSource(source: string, language: ShaderCraftLanguage
   }
   // Library code may call a caller-owned replacement whose body follows the inserted declarations. Retain
   // that body and make its exact signature visible first, just as for the caller-owned map scene contract.
-  const dependencies = new Set(added.flatMap(id => byId.get(id)![language].dependencies))
+  const dependencies = new Set(emitted.flatMap(id => byId.get(id)![language].dependencies))
   const callerPrototypes: string[] = []
   if (language === 'glsl') for (const item of items) {
     if (item.kind !== 'function' || item.start < cut || macros.has(item.name)) continue
@@ -137,7 +148,7 @@ export function bundleShaderSource(source: string, language: ShaderCraftLanguage
   }
   const prototype = callerPrototypes.join('\n') + (callerPrototypes.length ? '\n\n' : '') + (language === 'glsl' && requires.has('map') && !items.some(i => i.kind === 'prototype' && i.name === 'map' && i.start < cut)
     ? 'vec2 map(vec3 p);\n\n' : '')
-  const library = added.map(id => getShaderCraftSymbolSource(id, language)).join('\n\n')
+  const library = emitted.map(id => getShaderCraftSymbolSource(id, language)).join('\n\n')
   let result = source.slice(0, cut) + '\n' + (oldBlock ? '' : header + '\n\n') + prototype + library + '\n\n' + source.slice(cut)
   const merged = oldBlock && findCreditBlock(result)
   if (merged) result = result.slice(0, merged.start) + header + result.slice(merged.end)
