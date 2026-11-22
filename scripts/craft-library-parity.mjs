@@ -565,7 +565,10 @@ async function renderAll(backend, probes) {
             try {
               state.failure = null
               await renderer.registerPortableEffect({
-                func, namespace: 'user', globals: {}, ...(inputData ? { externalTexture: 'probeInputData' } : {}),
+                func, namespace: 'user', globals: {},
+                ...(inputData ? { textures: { probeInputData: {
+                  width: inputData.width, height: inputData.height, format: 'rgba32f',
+                } } } : {}),
                 passes: [{ name: 'main', program: func, inputs: inputData ? { probeInputData: 'probeInputData' } : {}, outputs: { color: 'outputTex' } }],
                 shaders: { [func]: { [language]: source } },
               })
@@ -576,12 +579,15 @@ async function renderAll(backend, probes) {
               if (actual !== backend) throw new Error(`Requested backend ${backend}, renderer used ${actual}`)
               if (!render) { results.push({ func, ok: true }); continue }
               if (inputData) {
-                const bindings = renderer.getMediaSteps().filter(binding => binding.uniform === 'probeInputData')
-                if (bindings.length !== 1) throw new Error(`Expected one probe input binding, got ${bindings.length}`)
-                const binding = bindings[0]
-                if (binding.effect !== `user.${func}`) throw new Error(`Probe input binding belongs to ${binding.effect}`)
-                if (!pipeline.graph.passes.some(pass => pass.inputs?.probeInputData === binding.textureId)) throw new Error('Probe input binding disagrees with compiled pass')
-                pipeline.backend.uploadDataTexture(binding.textureId, new Float32Array(inputData.data), inputData.width, inputData.height)
+                const passes = pipeline.graph.passes.filter(pass => Object.hasOwn(pass.inputs ?? {}, 'probeInputData'))
+                if (passes.length !== 1) throw new Error(`Expected one probe input pass, got ${passes.length}`)
+                const pass = passes[0]
+                if (pass.effectKey !== `user.${func}`) throw new Error(`Probe input pass belongs to ${pass.effectKey}`)
+                const textureId = pass.inputs.probeInputData
+                if (!Number.isSafeInteger(pass.stepIndex) || pass.stepIndex < 0
+                  || pass.nodeId !== `node_${pass.stepIndex}`
+                  || textureId !== `${pass.nodeId}_probeInputData`) throw new Error('Probe input is not its compiled node-local texture')
+                pipeline.backend.uploadDataTexture(textureId, new Float32Array(inputData.data), inputData.width, inputData.height)
               }
               const frame = renderer.frameCount
               renderer.render(0)
