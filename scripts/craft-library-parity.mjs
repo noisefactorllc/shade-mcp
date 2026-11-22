@@ -4,7 +4,8 @@
 // program that contain only the symbol's dependency closure from SHADER_CRAFT_LIBRARY, map each pixel to one
 // output word of one sample of inputs, and write that 32-bit word into the pixel's four 8-bit channels. Inputs mix
 // a spread of values with edge values (zeros of both signs, boundaries, tiny and large magnitudes) and are built
-// from integer hashes and float bit patterns, so both languages see bit-identical arguments. The probes are
+// from integer hashes and float bit patterns on the host, then transported as exact integer halves in a texture.
+// Paged readbacks verify every argument against the host words before function outputs are compared. The probes are
 // registered as authored Portable effects (CanvasRenderer.registerPortableEffect, the runDslProgram path), compiled
 // from a DSL program, rendered on WebGL2 and on WebGPU, and read back from the output surface.
 //
@@ -20,6 +21,7 @@
 // Usage: NOISEMAKER=/path/to/noisemaker node scripts/craft-library-parity.mjs [--only id,id] [--json report.json]
 // Set SHADE_SWIFTSHADER=1 on machines without a GPU. Build dist/ first (npm run build).
 import { existsSync, writeFileSync, readFileSync } from 'node:fs'
+import { ProbeInputs, assertArgumentWords } from './craft-probe-inputs.mjs'
 
 const NM = process.env.NOISEMAKER
 if (!NM || !existsSync(`${NM}/shaders/src/index.js`)) {
@@ -51,9 +53,6 @@ const ORDER = new Map(LIBRARY.map((entry, i) => [entry.id, i]))
 // ---------------------------------------------------------------------------------------------- inputs
 const f32 = new Float32Array(1)
 const u32 = new Uint32Array(f32.buffer)
-const bits = value => { f32[0] = value; return u32[0] }
-const hex = n => `0x${(n >>> 0).toString(16)}u`
-const fbits = value => ({ glsl: `uintBitsToFloat(${hex(bits(value))})`, wgsl: `bitcast<f32>(${hex(bits(value))})` })
 
 // Edge values for floats; every generator mixes them half and half with uniform values from its range.
 const EDGE = [0, -0, 1, -1, 0.5, -0.5, 2, -2, 0.25, 1e-7, -1e-7, 1e-30, 3, -3.7, 0.999999, 1.000001,
@@ -209,152 +208,6 @@ function parseSignature(signature) {
   return { ret: m[1], name: m[2], params }
 }
 
-// Builds the probe's input generators and their helper code, per language.
-class ProbeInputs {
-  constructor() { this.tables = []; this.salt = 0 }
-  table(values, kind) {
-    const key = `${kind}:${values.join(',')}`
-    let index = this.tables.findIndex(t => t.key === key)
-    if (index < 0) { index = this.tables.length; this.tables.push({ key, kind, values }) }
-    return index
-  }
-  nextSalt() { return this.salt++ }
-  scalarFloat([lo, hi, edges]) {
-    const t = this.table(edges.map(bits), 'f'), salt = this.nextSalt()
-    const l = fbits(lo), h = fbits(hi)
-    return { glsl: `probeF${t}(s, ${salt}u, ${l.glsl}, ${h.glsl})`, wgsl: `probeF${t}(s, ${salt}u, ${l.wgsl}, ${h.wgsl})` }
-  }
-  scalarInt([lo, hi, edges]) {
-    const t = this.table(edges, 'i'), salt = this.nextSalt()
-    return { glsl: `probeI${t}(s, ${salt}u, ${lo}, ${hi})`, wgsl: `probeI${t}(s, ${salt}u, ${lo}, ${hi})` }
-  }
-  scalarUint(edges) {
-    const t = this.table(edges.map(v => v >>> 0), 'u'), salt = this.nextSalt()
-    return { glsl: `probeU${t}(s, ${salt}u)`, wgsl: `probeU${t}(s, ${salt}u)` }
-  }
-  value(type, spec) {
-    const info = TYPE[type]
-    if (!info) throw new Error(`No input generator for type ${type}`)
-    const ctor = { glsl: type, wgsl: info.wgsl }
-    const many = (n, make) => {
-      const parts = Array.from({ length: n }, make)
-      return n === 1 ? parts[0] : {
-        glsl: `${ctor.glsl}(${parts.map(p => p.glsl).join(', ')})`,
-        wgsl: `${ctor.wgsl}(${parts.map(p => p.wgsl).join(', ')})`,
-      }
-    }
-    if (spec.quad) {
-      if (info.n !== 1) throw new Error('Quad-linear inputs are scalar')
-      this.usesQuad = true
-      const salt = this.nextSalt()
-      return { glsl: `probeQuadLinear(${salt}u)`, wgsl: `probeQuadLinear(${salt}u)` }
-    }
-    if (spec.unit) {
-      const v = many(info.n, () => this.scalarFloat([-1, 1, spec.edges ?? UNIT_EDGE]))
-      return { glsl: `normalize(${v.glsl})`, wgsl: `normalize(${v.wgsl})` }
-    }
-    if (spec.sincos) {
-      const a = this.scalarFloat([spec.sincos[0], spec.sincos[1], [0, Math.PI / 2, Math.PI, 0.001]])
-      return { glsl: `vec2(sin(${a.glsl}), cos(${a.glsl}))`, wgsl: `vec2f(sin(${a.wgsl}), cos(${a.wgsl}))` }
-    }
-    if (spec.cell) {
-      return many(info.n, () => {
-        const v = this.scalarFloat(spec.cell)
-        return { glsl: `floor(${v.glsl})`, wgsl: `floor(${v.wgsl})` }
-      })
-    }
-    if (info.base === 'float') return many(info.n, () => this.scalarFloat(spec.float ?? DEFAULT.float.float))
-    if (info.base === 'int') return many(info.n, () => this.scalarInt(spec.int ?? DEFAULT.int.int))
-    return many(info.n, () => this.scalarUint(spec.uint ?? DEFAULT.uint.uint))
-  }
-  helpers(language) {
-    const glsl = language === 'glsl'
-    const out = [glsl ? `uint probeHash(uint s, uint salt) {
-    uint x = (s * 0x9E3779B9u) ^ (salt * 0x85EBCA6Bu + 0x632BE5ABu);
-    x ^= x >> 16u; x *= 0x7FEB352Du; x ^= x >> 15u; x *= 0x846CA68Bu; x ^= x >> 16u;
-    return x;
-}` : `fn probeHash(s: u32, salt: u32) -> u32 {
-    var x = (s * 0x9E3779B9u) ^ ((salt * 0x85EBCA6Bu) + 0x632BE5ABu);
-    x ^= x >> 16u; x *= 0x7FEB352Du; x ^= x >> 15u; x *= 0x846CA68Bu; x ^= x >> 16u;
-    return x;
-}`]
-    this.tables.forEach(({ kind, values }, t) => {
-      const n = values.length
-      if (kind === 'f' && n === 0) {
-        out.push(glsl
-          ? `float probeF${t}(uint s, uint salt, float lo, float hi) {
-    uint h = probeHash(s, salt);
-    return lo + (hi - lo) * (float(h >> 8u) * (1.0 / 16777216.0));
-}`
-          : `fn probeF${t}(s: u32, salt: u32, lo: f32, hi: f32) -> f32 {
-    let h = probeHash(s, salt);
-    return lo + (hi - lo) * (f32(h >> 8u) * (1.0 / 16777216.0));
-}`)
-      } else if (kind === 'f') {
-        out.push(glsl
-          ? `const uint PROBE_T${t}[${n}] = uint[${n}](${values.map(hex).join(', ')});
-float probeF${t}(uint s, uint salt, float lo, float hi) {
-    uint h = probeHash(s, salt);
-    float edge = uintBitsToFloat(PROBE_T${t}[(h >> 1u) % ${n}u]);
-    float r = lo + (hi - lo) * (float(h >> 8u) * (1.0 / 16777216.0));
-    return ((h & 1u) == 0u) ? edge : r;
-}`
-          : `var<private> PROBE_T${t}: array<u32, ${n}> = array<u32, ${n}>(${values.map(hex).join(', ')});
-fn probeF${t}(s: u32, salt: u32, lo: f32, hi: f32) -> f32 {
-    let h = probeHash(s, salt);
-    let edge = bitcast<f32>(PROBE_T${t}[(h >> 1u) % ${n}u]);
-    let r = lo + (hi - lo) * (f32(h >> 8u) * (1.0 / 16777216.0));
-    return select(r, edge, (h & 1u) == 0u);
-}`)
-      } else if (kind === 'i') {
-        out.push(glsl
-          ? `const int PROBE_T${t}[${n}] = int[${n}](${values.join(', ')});
-int probeI${t}(uint s, uint salt, int lo, int hi) {
-    uint h = probeHash(s, salt);
-    int edge = PROBE_T${t}[(h >> 1u) % ${n}u];
-    int r = lo + int((h >> 8u) % uint(hi - lo + 1));
-    return ((h & 1u) == 0u) ? edge : r;
-}`
-          : `var<private> PROBE_T${t}: array<i32, ${n}> = array<i32, ${n}>(${values.join(', ')});
-fn probeI${t}(s: u32, salt: u32, lo: i32, hi: i32) -> i32 {
-    let h = probeHash(s, salt);
-    let edge = PROBE_T${t}[(h >> 1u) % ${n}u];
-    let r = lo + i32((h >> 8u) % u32(hi - lo + 1));
-    return select(r, edge, (h & 1u) == 0u);
-}`)
-      } else {
-        out.push(glsl
-          ? `const uint PROBE_T${t}[${n}] = uint[${n}](${values.map(hex).join(', ')});
-uint probeU${t}(uint s, uint salt) {
-    uint h = probeHash(s, salt);
-    return ((h & 1u) == 0u) ? PROBE_T${t}[(h >> 1u) % ${n}u] : probeHash(h, salt + 1u);
-}`
-          : `var<private> PROBE_T${t}: array<u32, ${n}> = array<u32, ${n}>(${values.map(hex).join(', ')});
-fn probeU${t}(s: u32, salt: u32) -> u32 {
-    let h = probeHash(s, salt);
-    return select(probeHash(h, salt + 1u), PROBE_T${t}[(h >> 1u) % ${n}u], (h & 1u) == 0u);
-}`)
-      }
-    })
-    if (this.usesQuad) {
-      out.push(glsl ? `float probeQuadLinear(uint salt) {
-    uint quad = uint((probePixel.y / 2) * ${W / 2} + probePixel.x / 2);
-    float a = float(int(probeHash(quad, salt) % 2049u) - 1024) / 512.0;
-    float b = float(int(probeHash(quad, salt + 1u) % 129u) - 64) / 256.0;
-    float c = float(int(probeHash(quad, salt + 2u) % 129u) - 64) / 256.0;
-    return a + b * float(probePixel.x & 1) + c * float(probePixel.y & 1);
-}` : `fn probeQuadLinear(salt: u32) -> f32 {
-    let quad = u32((probePixel.y / 2) * ${W / 2} + probePixel.x / 2);
-    let a = f32(i32(probeHash(quad, salt) % 2049u) - 1024) / 512.0;
-    let b = f32(i32(probeHash(quad, salt + 1u) % 129u) - 64) / 256.0;
-    let c = f32(i32(probeHash(quad, salt + 2u) % 129u) - 64) / 256.0;
-    return a + b * f32(probePixel.x & 1) + c * f32(probePixel.y & 1);
-}`)
-    }
-    return out.join('\n\n')
-  }
-}
-
 // The scene the raymarch probes march: a sphere, a ground plane and a box, with material ids.
 const MAP = {
   glsl: `vec2 map(vec3 p) {
@@ -400,10 +253,12 @@ function wordsOf(type, expr, language) {
 
 // Assembles the GLSL and WGSL probe programs for one library symbol.
 function buildProbe(entry) {
-  const inputs = new ProbeInputs()
+  const inputs = new ProbeInputs({ width: W, height: H, types: TYPE, defaults: DEFAULT, unitEdges: UNIT_EDGE })
   const lines = { glsl: [], wgsl: [] }
   const words = { glsl: [], wgsl: [] }
   let kinds = []
+  let argumentLines = { glsl: [], wgsl: [] }
+  const argumentWords = { glsl: [], wgsl: [] }
   if (entry.kind === 'const') {
     const type = /^const (\w+)/.exec(entry.glsl.signature)[1]
     for (const language of ['glsl', 'wgsl']) words[language] = wordsOf(type, entry[language].name, language).map(w => w.word)
@@ -423,9 +278,13 @@ function buildProbe(entry) {
         lines.glsl.push(`${param.type} ${local} = ${value.glsl};`)
         lines.wgsl.push(`${param.qualifier ? 'var' : 'let'} ${local}: ${TYPE[param.type].wgsl} = ${value.wgsl};`)
       }
+      if (param.qualifier !== 'out') {
+        for (const language of ['glsl', 'wgsl']) argumentWords[language].push(...wordsOf(param.type, local, language).map(w => w.word))
+      }
       callArgs.glsl.push(local)
       callArgs.wgsl.push(param.qualifier ? `&${local}` : local)
     })
+    argumentLines = { glsl: [...lines.glsl], wgsl: [...lines.wgsl] }
     const call = { glsl: `${entry.glsl.name}(${callArgs.glsl.join(', ')})`, wgsl: `${entry.wgsl.name}(${callArgs.wgsl.join(', ')})` }
     if (sig.ret === 'void') {
       lines.glsl.push(`${call.glsl};`)
@@ -444,9 +303,13 @@ function buildProbe(entry) {
   }
   const C = words.glsl.length
   const samples = Math.floor(PIXELS / C)
+  if (inputs.usesQuad && C !== 1) throw new Error('Derivative inputs require scalar output packing')
+  const packed = inputs.pack(samples)
+  const inputData = packed.height ? { data: Array.from(packed.data), width: packed.width, height: packed.height } : null
   const required = new Set(['glsl', 'wgsl'].flatMap(language => closure(entry, language).flatMap(e => e[language].requires)))
   const library = language => closure(entry, language).map(e => sourceOf(e.id, language)).join('\n\n')
-  const glsl = `#version 300 es
+  const program = (probeLines, probeWords, count, offset = 0, argumentsOnly = false) => {
+    const glsl = `#version 300 es
 precision highp float;
 precision highp int;
 out vec4 fragColor;
@@ -461,22 +324,23 @@ ${required.has('map') ? MAP.glsl : ''}
 ${inputs.helpers('glsl')}
 
 uint probeWord(uint s, int c) {
-    ${lines.glsl.join('\n    ')}
-    uint words[${C}];
-    ${words.glsl.map((w, k) => `words[${k}] = ${w};`).join('\n    ')}
+    ${probeLines.glsl.join('\n    ')}
+    uint words[${count}];
+    ${probeWords.glsl.map((w, k) => `words[${k}] = ${w};`).join('\n    ')}
     return words[c];
 }
 
 void main() {
     probePixel = ivec2(gl_FragCoord.xy);
-    int index = probePixel.y * ${W} + probePixel.x;
-    int sampleIndex = index / ${C};
-    uint word = probeWord(uint(sampleIndex), index - sampleIndex * ${C});
-    word = (sampleIndex < ${samples}) ? word : 0u;
+    int index = probePixel.y * ${W} + probePixel.x + ${offset};
+    int sampleIndex = index / ${count};
+    ${argumentsOnly ? `probePixel = ivec2((sampleIndex * ${C}) % ${W}, (sampleIndex * ${C}) / ${W});` : ''}
+    ${inputs.usesQuad ? `uint word = probeWord(uint(sampleIndex), index - sampleIndex * ${count});` : `uint word = 0u;
+    if (sampleIndex < ${samples}) word = probeWord(uint(sampleIndex), index - sampleIndex * ${count});`}
     fragColor = vec4(float(word & 255u), float((word >> 8u) & 255u), float((word >> 16u) & 255u), float(word >> 24u)) / 255.0;
 }
 `
-  const wgsl = `@group(0) @binding(0) var<uniform> resolution: vec2<f32>;
+    const wgsl = `@group(0) @binding(0) var<uniform> resolution: vec2<f32>;
 var<private> probePixel: vec2i;
 ${required.has('ZERO') ? 'var<private> ZERO: i32;' : ''}
 
@@ -487,9 +351,9 @@ ${required.has('map') ? MAP.wgsl : ''}
 ${inputs.helpers('wgsl')}
 
 fn probeWord(s: u32, c: i32) -> u32 {
-    ${lines.wgsl.join('\n    ')}
-    var words: array<u32, ${C}>;
-    ${words.wgsl.map((w, k) => `words[${k}] = ${w};`).join('\n    ')}
+    ${probeLines.wgsl.join('\n    ')}
+    var words: array<u32, ${count}>;
+    ${probeWords.wgsl.map((w, k) => `words[${k}] = ${w};`).join('\n    ')}
     return words[c];
 }
 
@@ -497,14 +361,32 @@ fn probeWord(s: u32, c: i32) -> u32 {
 fn main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     ${required.has('ZERO') ? 'ZERO = min(i32(position.x), 0);' : ''}
     probePixel = vec2i(i32(position.x), i32(resolution.y) - 1 - i32(position.y));
-    let index = probePixel.y * ${W} + probePixel.x;
-    let sampleIndex = index / ${C};
-    var word = probeWord(u32(sampleIndex), index - sampleIndex * ${C});
-    word = select(0u, word, sampleIndex < ${samples});
+    let index = probePixel.y * ${W} + probePixel.x + ${offset};
+    let sampleIndex = index / ${count};
+    ${argumentsOnly ? `probePixel = vec2i((sampleIndex * ${C}) % ${W}, (sampleIndex * ${C}) / ${W});` : ''}
+    ${inputs.usesQuad ? `let word = probeWord(u32(sampleIndex), index - sampleIndex * ${count});` : `var word = 0u;
+    if (sampleIndex < ${samples}) { word = probeWord(u32(sampleIndex), index - sampleIndex * ${count}); }`}
     return vec4f(f32(word & 255u), f32((word >> 8u) & 255u), f32((word >> 16u) & 255u), f32(word >> 24u)) / 255.0;
 }
 `
-  return { id: entry.id, kind: entry.kind, words: C, samples, kinds, glsl, wgsl }
+    return { glsl, wgsl }
+  }
+  const inputProbes = []
+  const appendInputProbes = (stage, declarations, values, expected) => {
+    const count = values.glsl.length
+    for (let offset = 0; offset < expected.length; offset += PIXELS) {
+      const page = new Uint32Array(PIXELS)
+      page.set(expected.subarray(offset, offset + PIXELS))
+      inputProbes.push({ id: `(arguments ${stage} ${entry.id} ${offset})`, kind: 'arguments', stage,
+        symbol: entry.id, expected: page, inputData, checkedWords: Math.min(PIXELS, expected.length - offset),
+        ...program(declarations, values, count, offset, true) })
+    }
+  }
+  const rawWords = Array.from({ length: inputs.columns.length }, (_, k) => `probeInputWord(s, ${k}u)`)
+  appendInputProbes('transport', { glsl: [], wgsl: [] }, { glsl: rawWords, wgsl: rawWords }, packed.words)
+  appendInputProbes('typed', argumentLines, argumentWords, inputs.typedWords(samples))
+  return { id: entry.id, kind: entry.kind, words: C, samples, kinds, inputData, inputProbes,
+    invalidInputs: inputs.invalidSamples.filter(record => record.sample < samples), ...program(lines, words, C) }
 }
 
 // Writes a known word into every pixel, so a run proves the encoding and the pixel order of each backend.
@@ -658,68 +540,78 @@ async function renderAll(backend, probes) {
       return gl ? String(gl.getParameter(debug ? debug.UNMASKED_RENDERER_WEBGL : gl.RENDERER)) : 'no context'
     }, backend)
     console.log(`craft-library-parity: ${backend} renders on ${rendererName}`)
-    await page.evaluate(async ({ base, backend, W, H }) => {
-      const { CanvasRenderer } = await import(`${base}/shaders/src/index.js`)
-      const canvas = document.createElement('canvas')
-      canvas.width = W
-      canvas.height = H
-      document.body.appendChild(canvas)
-      const state = { failure: null }
-      const renderer = new CanvasRenderer({
-        canvas, width: W, height: H, basePath: `${base}/shaders`, bundlePath: `${base}/shaders/effects`,
-        useBundles: false, preferWebGPU: backend === 'webgpu',
-        onError: error => { state.failure = error?.message || String(error) },
-      })
-      await renderer.loadManifest()
-      window.__craftParity = { renderer, state }
-    }, { base, backend, W, H })
     const chunk = 16
     for (let start = 0; start < probes.length; start += chunk) {
       const batch = probes.slice(start, start + chunk).map((probe, i) => ({
-        func: `craftProbe${start + i}`, source: probe[backend === 'webgpu' ? 'wgsl' : 'glsl'], render: probe.kind !== 'library',
+        func: `craftProbe${start + i}`, inputData: probe.inputData, source: probe[backend === 'webgpu' ? 'wgsl' : 'glsl'], render: probe.kind !== 'library',
       }))
-      const out = await page.evaluate(async ({ batch, backend }) => {
-        const { renderer, state } = window.__craftParity
-        const language = backend === 'webgpu' ? 'wgsl' : 'glsl'
-        const results = []
-        for (const { func, source, render } of batch) {
-          try {
-            state.failure = null
-            await renderer.registerPortableEffect({
-              func, namespace: 'user', globals: {},
-              passes: [{ name: 'main', program: func, inputs: {}, outputs: { color: 'outputTex' } }],
-              shaders: { [func]: { [language]: source } },
-            })
-            await renderer.compile(`search user\n${func}().write(o0)\nrender(o0)`)
-            renderer.stop()
-            const pipeline = renderer.pipeline
-            const actual = String(pipeline.backend.getName?.() || '').toLowerCase()
-            if (actual !== backend) throw new Error(`Requested backend ${backend}, renderer used ${actual}`)
-            if (!render) { results.push({ func, ok: true }); continue }
-            const frame = renderer.frameCount
-            renderer.render(0)
-            if (state.failure) throw new Error(`Render failed: ${state.failure}`)
-            if (renderer.frameCount !== frame + 1) throw new Error('Renderer did not advance')
-            await pipeline.backend.device?.queue.onSubmittedWorkDone()
-            const raw = await pipeline.backend.readPixels(pipeline.surfaces.get('o0').read)
-            const bytes = raw.data instanceof Uint8Array ? raw.data
-              : Uint8Array.from(raw.data, value => Math.round(Math.max(0, Math.min(1, value)) * 255))
-            let binary = ''
-            for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
-            results.push({ func, ok: true, width: raw.width, height: raw.height, pixels: btoa(binary) })
-          } catch (error) {
-            results.push({ func, ok: false, error: [error?.message, error?.detail].filter(Boolean).join('\n') || String(error) })
+      const out = await page.evaluate(async ({ batch, base, backend, W, H }) => {
+        const { CanvasRenderer } = await import(`${base}/shaders/src/index.js`)
+        const canvas = document.createElement('canvas')
+        canvas.width = W
+        canvas.height = H
+        document.body.appendChild(canvas)
+        const state = { failure: null }
+        const renderer = new CanvasRenderer({
+          canvas, width: W, height: H, basePath: `${base}/shaders`, bundlePath: `${base}/shaders/effects`,
+          useBundles: false, preferWebGPU: backend === 'webgpu',
+          onError: error => { state.failure = error?.message || String(error) },
+        })
+        try {
+          await renderer.loadManifest()
+          const language = backend === 'webgpu' ? 'wgsl' : 'glsl'
+          const results = []
+          for (const { func, source, render, inputData } of batch) {
+            try {
+              state.failure = null
+              await renderer.registerPortableEffect({
+                func, namespace: 'user', globals: {}, ...(inputData ? { externalTexture: 'probeInputData' } : {}),
+                passes: [{ name: 'main', program: func, inputs: inputData ? { probeInputData: 'probeInputData' } : {}, outputs: { color: 'outputTex' } }],
+                shaders: { [func]: { [language]: source } },
+              })
+              await renderer.compile(`search user\n${func}().write(o0)\nrender(o0)`)
+              renderer.stop()
+              const pipeline = renderer.pipeline
+              const actual = String(pipeline.backend.getName?.() || '').toLowerCase()
+              if (actual !== backend) throw new Error(`Requested backend ${backend}, renderer used ${actual}`)
+              if (!render) { results.push({ func, ok: true }); continue }
+              if (inputData) {
+                const bindings = renderer.getMediaSteps().filter(binding => binding.uniform === 'probeInputData')
+                if (bindings.length !== 1) throw new Error(`Expected one probe input binding, got ${bindings.length}`)
+                const binding = bindings[0]
+                if (binding.effect !== `user.${func}`) throw new Error(`Probe input binding belongs to ${binding.effect}`)
+                if (!pipeline.graph.passes.some(pass => pass.inputs?.probeInputData === binding.textureId)) throw new Error('Probe input binding disagrees with compiled pass')
+                pipeline.backend.uploadDataTexture(binding.textureId, new Float32Array(inputData.data), inputData.width, inputData.height)
+              }
+              const frame = renderer.frameCount
+              renderer.render(0)
+              if (state.failure) throw new Error(`Render failed: ${state.failure}`)
+              if (renderer.frameCount !== frame + 1) throw new Error('Renderer did not advance')
+              await pipeline.backend.device?.queue.onSubmittedWorkDone()
+              const raw = await pipeline.backend.readPixels(pipeline.surfaces.get('o0').read)
+              const bytes = raw.data instanceof Uint8Array ? raw.data
+                : Uint8Array.from(raw.data, value => Math.round(Math.max(0, Math.min(1, value)) * 255))
+              let binary = ''
+              for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+              results.push({ func, ok: true, width: raw.width, height: raw.height, pixels: btoa(binary) })
+            } catch (error) {
+              results.push({ func, ok: false, error: [error?.message, error?.detail].filter(Boolean).join('\n') || String(error) })
+            }
+          }
+          return results
+        } finally {
+          const device = renderer.pipeline?.backend?.device
+          try { await renderer.dispose({ loseContext: backend === 'webgl2' }) } finally {
+            try { device?.destroy() } finally { canvas.remove() }
           }
         }
-        return results
-      }, { batch, backend })
+      }, { batch, base, backend, W, H })
       results.push(...out)
       if (process.stdout.isTTY) {
         process.stdout.write(`\rcraft-library-parity: ${backend} ${Math.min(start + chunk, probes.length)}/${probes.length}`)
       }
     }
     if (process.stdout.isTTY) process.stdout.write('\n')
-    await page.evaluate(async () => { await window.__craftParity?.renderer.dispose().catch(() => {}) })
   } finally {
     await session.teardown()
   }
@@ -755,13 +647,17 @@ if (!bundledOnly && only && entries.length !== only.length) {
 }
 const bundles = bundledProbes().filter(p => !bundledOnly || !only || only.includes(p.id.slice(9, -1)))
 if (bundledOnly && only && bundles.length !== only.length) throw new Error('Unknown bundled program in --only')
-const probes = [calibrationProbe(), ...bundledOnly ? [] : [fullLibraryProbe(), ...entries.map(buildProbe)], ...bundles]
+const probes = [calibrationProbe(), ...bundledOnly ? [] : [fullLibraryProbe(), ...entries.map(buildProbe).flatMap(probe => [...probe.inputProbes, probe])], ...bundles]
 const rendered = {}
 const renderers = {}
 for (const backend of ['webgl2', 'webgpu']) ({ results: rendered[backend], rendererName: renderers[backend] } = await renderAll(backend, probes))
 
 const failures = []
-const report = { backends: {}, symbols: [] }
+const report = { backends: {}, inputs: [], symbols: [],
+  corpus: probes.filter(probe => probe.kind === 'function').map(probe => ({
+    id: probe.id, samples: probe.samples, words: probe.words, invalidInputs: probe.invalidInputs,
+  })),
+}
 let order = null
 for (const backend of ['webgl2', 'webgpu']) {
   const results = rendered[backend]
@@ -786,13 +682,31 @@ for (const backend of ['webgl2', 'webgpu']) {
   }
 }
 
-let functions = 0, constants = 0, exact = 0, equal = 0, tolerated = 0
+if (failures.length === 0) {
+  probes.forEach((probe, index) => {
+    if (probe.kind !== 'arguments') return
+    for (const backend of ['webgl2', 'webgpu']) {
+      const readback = decode(rendered[backend][index])
+      const actual = Uint32Array.from(order, position => readback[position])
+      try {
+        assertArgumentWords(probe.expected, actual, backend)
+        report.inputs.push({ id: probe.id, backend, checkedWords: probe.checkedWords, pass: true })
+      } catch (error) {
+        report.inputs.push({ id: probe.id, backend, checkedWords: probe.checkedWords, pass: false })
+        failures.push(`${probe.id}: ${error.message}`)
+      }
+    }
+  })
+}
+
+let functions = 0, constants = 0, comparedBundles = 0, exact = 0, equal = 0, tolerated = 0
 if (failures.length === 0) {
   probes.forEach((probe, i) => {
     if (!['function', 'const', 'bundled'].includes(probe.kind)) return
     const entry = BY_ID.get(probe.id)
     if (probe.kind === 'function') functions++
     else if (probe.kind === 'const') constants++
+    else comparedBundles++
     const a = decode(rendered.webgl2[i]), b = decode(rendered.webgpu[i])
     let differing = 0, maxDifference = 0, firstDifference = null, nonzero = false
     for (let sample = 0; sample < probe.samples; sample++) {
@@ -822,9 +736,9 @@ if (failures.length === 0) {
 
 for (const backend of ['webgl2', 'webgpu']) {
   const { probes: total, compiled } = report.backends[backend]
-  console.log(`craft-library-parity: ${backend} compiled and ran ${compiled}/${total} probes (calibration, ${bundledOnly ? 0 : 1} full library, ${bundledOnly ? 0 : entries.length} symbols, ${bundles.length} bundled programs)`)
+  console.log(`craft-library-parity: ${backend} compiled and ran ${compiled}/${total} probes (calibration, ${bundledOnly ? 0 : 1} full library, ${probes.filter(probe => probe.kind === 'arguments').length} argument pages, ${bundledOnly ? 0 : entries.length} symbols, ${bundles.length} bundled programs)`)
 }
-console.log(`craft-library-parity: compared ${functions} functions, ${constants} constants and ${bundles.length} bundled programs: ${exact} bit-identical, ` +
+console.log(`craft-library-parity: compared ${functions} functions, ${constants} constants and ${comparedBundles} bundled programs: ${exact} bit-identical, ` +
   `${equal} equal apart from the sign of zero or NaN bits, ${tolerated} within a recorded tolerance`)
 if (jsonPath) writeFileSync(jsonPath, JSON.stringify({ ...report, failures }, null, 2))
 if (failures.length) {
