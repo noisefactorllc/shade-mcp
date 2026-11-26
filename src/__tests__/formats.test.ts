@@ -4,10 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadEffectDefinition, parseDefinitionJson } from '../formats/index.js'
+import type { EffectDefinition } from '../formats/index.js'
 
 // A version 2 package written from the Portable package schema, valid under
-// the engine's own version 2 normalizer. It declares every field of the
-// schema, so each field can be followed through the reader.
+// the engine's own version 2 normalizer. It declares every top-level, pass,
+// parameter, control and texture field of the schema, and a uniform layout in
+// each form the engine reads, so each can be followed through the reader.
 const PORTABLE_V2_DIR = fileURLToPath(new URL('./fixtures/portable-v2', import.meta.url))
 const portableV2 = (): Record<string, any> => JSON.parse(readFileSync(join(PORTABLE_V2_DIR, 'definition.json'), 'utf-8'))
 
@@ -71,7 +73,7 @@ describe('parseDefinitionJson', () => {
 })
 
 describe('loadEffectDefinition on a version 2 package', () => {
-  it('reads a fixture that declares every field of the package schema', () => {
+  it('reads a fixture that declares every top-level, pass, parameter, control and texture field of the package schema', () => {
     const raw = portableV2()
     const fieldsOf = (records: unknown[]) => [...new Set(records.flatMap(record => Object.keys(record as object)))].sort()
     expect(Object.keys(raw).sort()).toEqual([
@@ -96,6 +98,11 @@ describe('loadEffectDefinition on a version 2 package', () => {
     expect(fieldsOf([...Object.values(raw.textures), ...Object.values(raw.textures3d)])).toEqual([
       'depth', 'filter', 'format', 'height', 'is3D', 'mipmaps', 'persistent', 'width',
     ])
+    // A uniform layout is a map of uniform names to slots, a list of entries or a byte layout.
+    expect(Array.isArray(raw.uniformLayout)).toBe(false)
+    expect(raw.uniformLayout.time).toHaveProperty('slot')
+    expect(Array.isArray(raw.uniformLayouts.advect)).toBe(true)
+    expect(raw.uniformLayouts.draw.type).toBe('byte')
   })
 
   it('keeps every top-level field the package declares', () => {
@@ -113,6 +120,15 @@ describe('loadEffectDefinition on a version 2 package', () => {
     expect(def.format).toBe('json')
     expect(def.effectDir).toBe(PORTABLE_V2_DIR)
     expect(def.partial).toBeUndefined()
+  })
+
+  it('types a uniform layout in the list form as well as the map form', () => {
+    const def = loadEffectDefinition(PORTABLE_V2_DIR)
+    const listForm: EffectDefinition['uniformLayout'] = [
+      { name: 'curl', slot: 0, components: 'x' },
+      { name: 'steps', slot: 0, components: 'y' },
+    ]
+    expect(def.uniformLayouts?.advect).toStrictEqual(listForm)
   })
 
   it('reads passes keyed by name as a list in declaration order, with every pass control and no field the pass leaves out', () => {
@@ -134,9 +150,10 @@ describe('loadEffectDefinition on a version 2 package', () => {
   })
 
   it('adds no top-level field that a package leaves out', () => {
-    const minimal = { format: 'noisemaker-portable-effect', version: 2, func: 'minimal', passes: { main: { program: 'main' } } }
+    const minimal = { format: 'noisemaker-portable-effect', version: 2, name: 'minimal', func: 'minimal', passes: { main: { program: 'main' } } }
     expect(parseDefinitionJson(minimal, '/test')).toStrictEqual({
       func: 'minimal',
+      name: 'minimal',
       globals: {},
       passes: [{ name: 'main', program: 'main' }],
       format: 'json',

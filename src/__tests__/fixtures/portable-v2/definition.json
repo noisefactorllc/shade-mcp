@@ -150,9 +150,16 @@
     "density": { "slot": 0, "components": "w" }
   },
   "uniformLayouts": {
-    "advect": {
-      "curl": { "slot": 0, "components": "x" },
-      "steps": { "slot": 0, "components": "y" }
+    "advect": [
+      { "name": "curl", "slot": 0, "components": "x" },
+      { "name": "steps", "slot": 0, "components": "y" }
+    ],
+    "draw": {
+      "type": "byte",
+      "layout": [
+        { "name": "trailCount", "offset": 0, "size": 4, "type": "int" },
+        { "name": "density", "offset": 4, "size": 4, "type": "float" }
+      ]
     }
   },
   "passes": {
