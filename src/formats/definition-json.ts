@@ -65,8 +65,11 @@ function parsePortablePackage(json: Record<string, unknown>, effectDir: string):
   if (json.format !== PORTABLE_FORMAT) {
     throw new Error(`definition.json: format ${JSON.stringify(json.format)} is not supported; a version ${PORTABLE_VERSION} package states "format": "${PORTABLE_FORMAT}"`)
   }
+  if (json.version === undefined) {
+    throw new Error(`definition.json: a package with a format marker states version ${PORTABLE_VERSION}`)
+  }
   if (json.version !== PORTABLE_VERSION) {
-    throw new Error(`definition.json: version ${String(JSON.stringify(json.version))} is not supported; this reader reads version ${PORTABLE_VERSION}`)
+    throw new Error(`definition.json: version ${JSON.stringify(json.version)} is not supported; this reader reads version ${PORTABLE_VERSION}`)
   }
   if (!isRecord(json.passes)) {
     throw new Error(`definition.json: passes must be an object keyed by pass name in a version ${PORTABLE_VERSION} package`)

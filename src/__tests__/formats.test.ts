@@ -133,7 +133,7 @@ describe('loadEffectDefinition on a version 2 package', () => {
     expect(() => loadEffectDefinition(writeJsonDef({ ...raw, format: 'other-format' }))).toThrow(/format "other-format" is not supported/)
     expect(() => loadEffectDefinition(writeJsonDef({ ...raw, version: 3 }))).toThrow(/version 3 is not supported/)
     const { version, ...unversioned } = raw
-    expect(() => loadEffectDefinition(writeJsonDef(unversioned))).toThrow(/version undefined is not supported/)
+    expect(() => loadEffectDefinition(writeJsonDef(unversioned))).toThrow('definition.json: a package with a format marker states version 2')
     expect(() => loadEffectDefinition(writeJsonDef({ ...raw, passes: [{ name: 'main', program: 'main' }] }))).toThrow(/passes must be an object keyed by pass name/)
   })
 
