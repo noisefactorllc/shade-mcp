@@ -50,9 +50,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 // the parameters object here.
 const RESERVED_NAMES = [...Object.getOwnPropertyNames(Object.prototype), 'prototype']
 
-// The shared projection sets each field it knows, to undefined when the
-// package leaves it out. Those fields are dropped, so a version 2 definition
-// carries no field that is set to undefined.
+// The shared projection sets every field it knows, and a field that it has
+// no value or default for is set to undefined. Those fields are dropped, so a
+// version 2 definition, its parameters and its passes carry no field that is
+// set to undefined.
 function declaredFields<T extends object>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter(([, field]) => field !== undefined)) as T
 }
@@ -60,9 +61,9 @@ function declaredFields<T extends object>(value: T): T {
 // A version 2 package keeps every field it declares. Its passes are an object
 // keyed by pass name, in declaration order, and are read as a list in that
 // order, each with its name. Each parameter and each pass keeps all of its
-// fields, with the shared projection's defaults on top: a parameter's name,
-// its uniform and its type, and a pass's program. The projection adds no
-// other field that the package leaves out.
+// fields, with the shared projection's values on top: a parameter's name,
+// its uniform and its type, and a pass's name and its program. The
+// projection adds no other field that the package leaves out.
 function parsePortablePackage(json: Record<string, unknown>, effectDir: string): EffectDefinition {
   if (json.format !== PORTABLE_FORMAT) {
     throw new Error(`definition.json: format ${JSON.stringify(json.format)} is not supported; a version ${PORTABLE_VERSION} package states "format": "${PORTABLE_FORMAT}"`)
