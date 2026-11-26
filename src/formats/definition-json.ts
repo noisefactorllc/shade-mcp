@@ -50,10 +50,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 // the parameters object here.
 const RESERVED_NAMES = [...Object.getOwnPropertyNames(Object.prototype), 'prototype']
 
+// The shared projection sets each field it knows, to undefined when the
+// package leaves it out. A field that a version 2 package leaves out stays out.
+function declaredFields<T extends object>(value: T): T {
+  return Object.fromEntries(Object.entries(value).filter(([, field]) => field !== undefined)) as T
+}
+
 // A version 2 package keeps every field it declares. Its passes are an object
 // keyed by pass name, in declaration order, and are read as a list in that
 // order, each with its name. Each parameter and each pass keeps all of its
-// fields, with the shared projection's defaults applied on top.
+// fields, with the shared projection's defaults applied on top, and no
+// field that it leaves out.
 function parsePortablePackage(json: Record<string, unknown>, effectDir: string): EffectDefinition {
   if (json.format !== PORTABLE_FORMAT) {
     throw new Error(`definition.json: format ${JSON.stringify(json.format)} is not supported; a version ${PORTABLE_VERSION} package states "format": "${PORTABLE_FORMAT}"`)
@@ -71,14 +78,14 @@ function parsePortablePackage(json: Record<string, unknown>, effectDir: string):
   for (const [key, spec] of Object.entries(rawGlobals)) {
     if (RESERVED_NAMES.includes(key)) throw new Error(`definition.json: globals.${key}: a parameter name may not be a reserved name`)
     if (!isRecord(spec)) throw new Error(`definition.json: globals.${key} must be a parameter object`)
-    globals[key] = { ...spec, ...normalizeGlobal(key, spec) }
+    globals[key] = declaredFields({ ...spec, ...normalizeGlobal(key, spec) })
   }
 
   const passes: EffectDefinition['passes'] = []
   for (const [name, pass] of Object.entries(json.passes)) {
     if (RESERVED_NAMES.includes(name)) throw new Error(`definition.json: passes.${name}: a pass name may not be a reserved name`)
     if (!isRecord(pass)) throw new Error(`definition.json: passes.${name} must be a pass object`)
-    passes.push({ ...pass, ...normalizePass({ ...pass, name }) })
+    passes.push(declaredFields({ ...pass, ...normalizePass({ ...pass, name }) }))
   }
 
   const fields: Record<string, unknown> = {}
@@ -86,7 +93,7 @@ function parsePortablePackage(json: Record<string, unknown>, effectDir: string):
     if (Object.hasOwn(json, field)) fields[field] = json[field]
   }
 
-  return {
+  return declaredFields({
     // A version 2 package may leave func out; its name is then the func.
     func: (json.func ?? json.name) as string,
     name: json.name as string | undefined,
@@ -97,7 +104,7 @@ function parsePortablePackage(json: Record<string, unknown>, effectDir: string):
     globals,
     passes,
     ...fields,
-    format: 'json',
+    format: 'json' as const,
     effectDir,
-  }
+  })
 }

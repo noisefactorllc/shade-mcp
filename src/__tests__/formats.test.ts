@@ -88,22 +88,33 @@ describe('loadEffectDefinition on a version 2 package', () => {
     expect(def.partial).toBeUndefined()
   })
 
-  it('reads passes keyed by name as a list in declaration order, with every pass control', () => {
+  it('reads passes keyed by name as a list in declaration order, with every pass control and no field the pass leaves out', () => {
     const raw = portableV2()
     const def = loadEffectDefinition(PORTABLE_V2_DIR)
     expect(def.passes.map(pass => pass.name)).toEqual(Object.keys(raw.passes))
     for (const [index, [name, pass]] of Object.entries(raw.passes).entries()) {
-      expect(def.passes[index], name).toEqual({ ...(pass as object), name })
+      expect(def.passes[index], name).toStrictEqual({ ...(pass as object), name })
     }
   })
 
-  it('keeps every field of each parameter', () => {
+  it('keeps every field of each parameter, and adds none that it leaves out', () => {
     const raw = portableV2()
     const def = loadEffectDefinition(PORTABLE_V2_DIR)
     expect(Object.keys(def.globals)).toEqual(Object.keys(raw.globals))
     for (const [name, spec] of Object.entries(raw.globals)) {
-      expect(def.globals[name], name).toEqual({ ...(spec as object), name, uniform: (spec as any).uniform ?? name })
+      expect(def.globals[name], name).toStrictEqual({ ...(spec as object), name, uniform: (spec as any).uniform ?? name })
     }
+  })
+
+  it('adds no top-level field that a package leaves out', () => {
+    const minimal = { format: 'noisemaker-portable-effect', version: 2, func: 'minimal', passes: { main: { program: 'main' } } }
+    expect(parseDefinitionJson(minimal, '/test')).toStrictEqual({
+      func: 'minimal',
+      globals: {},
+      passes: [{ name: 'main', program: 'main' }],
+      format: 'json',
+      effectDir: '/test',
+    })
   })
 
   it('takes func from name when the package leaves func out', () => {
