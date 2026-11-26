@@ -67,9 +67,21 @@ jobs:
           tar -xzf shade-mcp-dist.tar.gz -C /tmp/drop
           node scripts/check-dist-selfcontained.mjs /tmp/drop
 
+      # The release app publishes the release, so the release carries the
+      # same identity as its tag.
+      - name: Mint release GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: Iv23liy6T6BW0BXuZRzx
+          private-key: ${{ secrets.EHSRE_APP_PRIVATE_KEY }}
+          owner: noisefactorllc
+          repositories: ${{ github.event.repository.name }}
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
+          token: ${{ steps.app-token.outputs.token }}
           files: shade-mcp-dist.tar.gz
           generate_release_notes: true
 
