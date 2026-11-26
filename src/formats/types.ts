@@ -69,8 +69,10 @@ export interface EffectDefinition {
   openCategories?: string[]
   textures?: Record<string, Record<string, unknown>>
   textures3d?: Record<string, Record<string, unknown>>
-  uniformLayout?: Record<string, unknown>
-  uniformLayouts?: Record<string, Record<string, unknown>>
+  /** A map of uniform names to slots, a list of entries, or a byte layout. */
+  uniformLayout?: Record<string, unknown> | unknown[]
+  /** A uniform layout for each program, in any form that uniformLayout takes. */
+  uniformLayouts?: Record<string, Record<string, unknown> | unknown[]>
   defaultProgram?: string
   externalTexture?: string
   externalMesh?: string
