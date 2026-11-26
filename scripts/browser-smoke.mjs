@@ -114,9 +114,16 @@ const sceneResponse = await rpc('tools/call', {
   arguments: { dsl: sceneDsl, backend: 'webgl2', frames: [1], warmup_frames: 1, resolution: [96, 54] },
 })
 const sceneMetadata = JSON.parse(sceneResponse.result?.content?.find(block => block.type === 'text')?.text ?? '{}')
-const sceneOk = sceneResponse.result?.isError !== true && sceneMetadata.status === 'ok'
-if (!sceneOk) failed++
-console.log(`browser-smoke: ${sceneOk ? 'PASS' : 'FAIL'} runDslProgram scene frame advance ${sceneOk ? '' : JSON.stringify(sceneMetadata).slice(0, 300)}`)
+// noisemaker snapshots before the scene compiler reject scene() with S001, so
+// the frame-advance check only applies where the engine can compile a scene.
+let sceneDiagnostics = null
+try { sceneDiagnostics = JSON.parse(sceneMetadata.error ?? 'null')?.diagnostics } catch {}
+const sceneUnsupported = sceneMetadata.status === 'error'
+  && Array.isArray(sceneDiagnostics)
+  && sceneDiagnostics.some(d => d.code === 'S001' && d.identifier === 'scene')
+const sceneOk = !sceneUnsupported && sceneResponse.result?.isError !== true && sceneMetadata.status === 'ok'
+if (!sceneUnsupported && !sceneOk) failed++
+console.log(`browser-smoke: ${sceneUnsupported ? 'SKIP' : sceneOk ? 'PASS' : 'FAIL'} runDslProgram scene frame advance ${sceneUnsupported ? '(noisemaker snapshot has no scene compiler)' : sceneOk ? '' : JSON.stringify(sceneMetadata).slice(0, 300)}`)
 
 const badDsl = await rpc('tools/call', {
   name: 'runDslProgram',
