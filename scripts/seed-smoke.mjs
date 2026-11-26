@@ -56,7 +56,7 @@ async function call(client, name, args) {
   return JSON.parse(reply.result.content[0].text)
 }
 
-// The mean colour of the program's output: a seed that draws another scale
+// The image metrics of the program's output: a seed that draws another scale
 // renders another frame.
 async function meanOf(client, dsl) {
   const result = await call(client, 'runDslProgram', { dsl, backend: 'webgl2', frames: [1], warmup_frames: 0,

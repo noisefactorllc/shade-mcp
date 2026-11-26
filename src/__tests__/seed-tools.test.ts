@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { ZodError } from 'zod'
 import { freshSeed, runSeedOperation } from '../tools/browser/seed.js'
 import type { BrowserSession } from '../harness/browser-session.js'
 
@@ -58,9 +59,9 @@ describe('seed tools', () => {
 
   it('rejects a seed outside 0 to 4294967295, a fraction and an empty program before opening the renderer', async () => {
     for (const seed of [-1, 4294967296, 1.5]) {
-      await expect(runSeedOperation(closedSession, 'search synth\nnoise().write(o0)', seed)).rejects.toThrow()
+      await expect(runSeedOperation(closedSession, 'search synth\nnoise().write(o0)', seed)).rejects.toThrow(ZodError)
     }
-    await expect(runSeedOperation(closedSession, '')).rejects.toThrow()
+    await expect(runSeedOperation(closedSession, '')).rejects.toThrow(ZodError)
   })
 
   it('names the missing seed API when the renderer has none', async () => {
@@ -78,6 +79,21 @@ describe('seed tools', () => {
   it('sets the seed and returns the program as the renderer writes it back', async () => {
     const result = await runSeedOperation(sessionWith(RENDERER_2X), 'search synth\nseed 42\nnoise().write(o0)', 4294967295)
     expect(result).toEqual({ status: 'ok', seed: 4294967295, dsl: 'search synth\nseed 4294967295\nnoise().write(o0)' })
+  })
+
+  it('reports a compile rejection as its diagnostics', async () => {
+    const rejecting = moduleUrl(`
+export class CanvasRenderer {
+  constructor() { this.currentDsl = '' }
+  async loadManifest() { return {} }
+  async loadEffects() {}
+  async compile() { throw { code: 'ERR_COMPILATION_FAILED', diagnostics: [{ code: 'S001', message: "Unknown effect: 'notAnEffect'" }] } }
+  getSeed() { return null }
+  async setSeed() {}
+  async dispose() {}
+}`)
+    expect(await runSeedOperation(sessionWith(rejecting), 'search synth\nnotAnEffect().write(o0)', 7))
+      .toEqual({ status: 'error', error: "S001: Unknown effect: 'notAnEffect'" })
   })
 
   it('draws a fresh seed over the whole range', () => {

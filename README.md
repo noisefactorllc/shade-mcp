@@ -227,10 +227,10 @@ effect or renders on another backend, the entry's `status` is `error`.
 | `testPixelParity` | Compare WebGL2 and WebGPU output pixel by pixel within the epsilon tolerance. |
 | `runDslProgram` | Render every written output surface at frames 1, 120, and 600 after warmup by default, at 960×540. Return one PNG contact sheet as MCP image content plus metrics for each surface and frame. |
 | `getProgramSeed` | Return a program's seed: the value of its `seed` directive, or `null` when it has none. |
-| `setProgramSeed` | Set a program's seed, 0 to 4294967295. Return the seed and the program with its `seed` directive written or replaced, as the engine writes it back. |
+| `setProgramSeed` | Set a program's seed, 0 to 4294967295. Return the seed and the program with its `seed` directive written or replaced. The whole program comes back as the engine's unparser writes it: comments before `search` are dropped and values are written as compiled. |
 | `reseedProgram` | As `setProgramSeed`, with a fresh random seed. |
 
-The seed tools use the engine's seed API (`CanvasRenderer.getSeed` and `setSeed`), which Noisemaker 2 has. Point `SHADE_DSL_RENDERER_MODULE` at a Noisemaker 2 renderer to use them. With a renderer that has no seed API, each returns an error that names the missing methods.
+The seed tools use the engine's seed API (`CanvasRenderer.getSeed` and `setSeed`), which Noisemaker 2 has. They take built-in effects only; they have no `effects` argument. Point `SHADE_DSL_RENDERER_MODULE` at a Noisemaker 2 renderer to use them. With a renderer that has no seed API, each returns an error that names the missing methods.
 
 ### Analysis Tools (4)
 
