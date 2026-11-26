@@ -123,10 +123,19 @@ const sceneMetadata = JSON.parse(sceneResponse.result?.content?.find(block => bl
 // check and the exit code.
 let sceneDiagnostics = null
 try { sceneDiagnostics = JSON.parse(sceneMetadata.error ?? 'null')?.diagnostics } catch {}
+// S001 'scene' proves the engine under test lacks the scene compiler. The
+// cascade it produces for this program is chain-structure diagnostics (S005)
+// on the scene chain's calls, so the skip requires S001 'scene' plus only
+// S005 chain-structure errors. Any other code or severity is an unrelated
+// engine rejection and fails the check and the exit code.
+const isSceneUnknown = d => d.code === 'S001' && d.identifier === 'scene' && d.severity === 'error'
+const isSceneCascade = d => d.code === 'S005' && d.severity === 'error'
 const sceneUnsupported = sceneResponse.result?.isError === true
   && sceneMetadata.status === 'error'
   && Array.isArray(sceneDiagnostics)
-  && sceneDiagnostics.some(d => d.code === 'S001' && d.identifier === 'scene' && d.severity === 'error')
+  && sceneDiagnostics.length > 0
+  && sceneDiagnostics.some(isSceneUnknown)
+  && sceneDiagnostics.every(d => isSceneUnknown(d) || isSceneCascade(d))
 const sceneOk = !sceneUnsupported && sceneResponse.result?.isError !== true && sceneMetadata.status === 'ok'
 if (!sceneUnsupported && !sceneOk) failed++
 console.log(`browser-smoke: ${sceneUnsupported ? 'SKIP' : sceneOk ? 'PASS' : 'FAIL'} runDslProgram scene frame advance ${sceneUnsupported ? '(noisemaker snapshot has no scene compiler)' : sceneOk ? '' : JSON.stringify(sceneMetadata).slice(0, 300)}`)
