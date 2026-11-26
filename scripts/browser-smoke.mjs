@@ -106,6 +106,18 @@ const dslOk = dslResponse.result?.isError !== true && dslMetadata.status === 'ok
 if (!dslOk) failed++
 console.log(`browser-smoke: ${dslOk ? 'PASS' : 'FAIL'} runDslProgram grid ${dslOk ? '' : JSON.stringify({ metadata: dslMetadata, contentTypes: dslBlocks.map(b => b.type) }).slice(0, 500)}`)
 
+// A scene program renders asynchronously: the verb must await the render call
+// before its frame-advance check, or every scene DSL fails at frame 1.
+const sceneDsl = 'search synth, filter, mixer\nlet layer = scene().blendMode(tex: noise(octaves: 3))\nnoise().blendMode(tex: layer).write(o0)\nrender(o0)'
+const sceneResponse = await rpc('tools/call', {
+  name: 'runDslProgram',
+  arguments: { dsl: sceneDsl, backend: 'webgl2', frames: [1], warmup_frames: 1, resolution: [96, 54] },
+})
+const sceneMetadata = JSON.parse(sceneResponse.result?.content?.find(block => block.type === 'text')?.text ?? '{}')
+const sceneOk = sceneResponse.result?.isError !== true && sceneMetadata.status === 'ok'
+if (!sceneOk) failed++
+console.log(`browser-smoke: ${sceneOk ? 'PASS' : 'FAIL'} runDslProgram scene frame advance ${sceneOk ? '' : JSON.stringify(sceneMetadata).slice(0, 300)}`)
+
 const badDsl = await rpc('tools/call', {
   name: 'runDslProgram',
   arguments: { dsl: 'missingEffect().write(o0)', frames: [1], resolution: [96, 54] },
