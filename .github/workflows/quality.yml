@@ -86,6 +86,14 @@ jobs:
           ref: cb22a05eff9afed99fcf22a482b944c26f43e814
           path: noisemaker
 
+      # The seed tools need a Noisemaker 2 engine, which has the seed API:
+      # v2.0.0-pre.6.
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          repository: noisefactorllc/noisemaker
+          ref: a2afaaf217e01045452f0c8aadb802a0aa165ae8
+          path: noisemaker-2
+
       # The authored composition fixture and codec are shared with Portable.
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
@@ -119,6 +127,13 @@ jobs:
           PORTABLE: ${{ github.workspace }}/portable
           SHADE_SWIFTSHADER: '1'
         run: node scripts/authored-dsl-smoke.mjs
+
+      - name: Seed tools smoke test
+        env:
+          NOISEMAKER: ${{ github.workspace }}/noisemaker
+          NOISEMAKER_2X: ${{ github.workspace }}/noisemaker-2
+          SHADE_SWIFTSHADER: '1'
+        run: node scripts/seed-smoke.mjs
 
       - name: Shader-craft arithmetic semantics
         env:

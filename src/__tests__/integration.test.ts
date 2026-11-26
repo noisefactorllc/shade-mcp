@@ -12,6 +12,7 @@ import { registerTestUniformResponsiveness } from '../tools/browser/uniforms.js'
 import { registerTestNoPassthrough } from '../tools/browser/passthrough.js'
 import { registerTestPixelParity } from '../tools/browser/parity.js'
 import { registerRunDslProgram } from '../tools/browser/dsl.js'
+import { registerSeedTools } from '../tools/browser/seed.js'
 import { registerCheckEffectStructure } from '../tools/analysis/structure.js'
 import { registerCheckAlgEquiv } from '../tools/analysis/alg-equiv.js'
 import { registerCompareShaders } from '../tools/analysis/compare.js'
@@ -34,6 +35,9 @@ const EXPECTED_TOOLS = [
   'testNoPassthrough',
   'testPixelParity',
   'runDslProgram',
+  'getProgramSeed',
+  'setProgramSeed',
+  'reseedProgram',
   'checkEffectStructure',
   'checkAlgEquiv',
   'compareShaders',
@@ -56,6 +60,7 @@ function createServer(): McpServer {
   registerTestNoPassthrough(server)
   registerTestPixelParity(server)
   registerRunDslProgram(server)
+  registerSeedTools(server)
   registerCheckEffectStructure(server)
   registerCheckAlgEquiv(server)
   registerCompareShaders(server)
@@ -71,7 +76,7 @@ function createServer(): McpServer {
 }
 
 describe('MCP server integration', () => {
-  it('registers all 21 tools', async () => {
+  it('registers all 24 tools', async () => {
     const server = createServer()
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
 
@@ -83,7 +88,7 @@ describe('MCP server integration', () => {
     const { tools } = await client.listTools()
     const toolNames = tools.map(t => t.name).sort()
 
-    expect(tools).toHaveLength(21)
+    expect(tools).toHaveLength(24)
     expect(toolNames).toEqual(EXPECTED_TOOLS.slice().sort())
 
     await client.close()

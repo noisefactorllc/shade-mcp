@@ -17,7 +17,7 @@ npm test         # vitest
 - `src/ai/provider.ts` — AI abstraction. Anthropic-first, OpenAI fallback. Reads API keys from env or dotfiles.
 - `src/formats/` — Effect definition parsers. Auto-detects definition.json (preferred) vs definition.js (acorn AST, literal values only; marks the result `partial` where a value is computed at run time).
 - `src/harness/` — Browser automation. `server-manager.ts` (ref-counted HTTP server), `browser-session.ts` (Playwright lifecycle), `pixel-reader.ts` (image metrics).
-- `src/tools/browser/` — browser-based tools (compile, render, describe, benchmark, uniforms, passthrough, parity, dsl).
+- `src/tools/browser/` — browser-based tools (compile, render, describe, benchmark, uniforms, passthrough, parity, dsl, seed).
 - `src/tools/analysis/` — tools that analyze files on disk (structure, alg-equiv, compare, branching).
   `structure.ts` detects GLSL name collisions: uniforms versus functions, reserved words, and built-in shadowing.
   `compare.ts` exports `extractFunctionNames`, `extractUniforms`, and `stripComments` helpers for GLSL/WGSL static analysis.

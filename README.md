@@ -15,7 +15,7 @@ Distilled from three projects:
 ## Requirements
 
 - Node.js 22 or newer
-- A viewer page for the seven viewer-driven browser tools; `runDslProgram` needs a Noisemaker checkout. See [Viewer](#viewer).
+- A viewer page for the seven viewer-driven browser tools; `runDslProgram` and the seed tools need a Noisemaker checkout. See [Viewer](#viewer).
 
 ## Quick Start
 
@@ -86,8 +86,8 @@ Environment variables:
 | `SHADE_VIEWER_PATH` | `/` | Path within the viewer to open |
 | `SHADE_VIEWER_PORT` | `0` (OS-assigned) | Port for the local viewer server |
 | `SHADE_GLOBALS_PREFIX` | `__shade` | Prefix of the viewer's window globals |
-| `SHADE_DSL_RENDERER_MODULE` | `/shaders/src/index.js` | Root-relative or HTTPS Noisemaker module exporting `CanvasRenderer` and `compile` for `runDslProgram` |
-| `SHADE_DSL_ASSETS_BASE` | `/shaders` | Root-relative or HTTPS Noisemaker asset base for `runDslProgram` |
+| `SHADE_DSL_RENDERER_MODULE` | `/shaders/src/index.js` | Root-relative or HTTPS Noisemaker module exporting `CanvasRenderer` and `compile` for `runDslProgram` and the seed tools |
+| `SHADE_DSL_ASSETS_BASE` | `/shaders` | Root-relative or HTTPS Noisemaker asset base for `runDslProgram` and the seed tools |
 | `SHADE_DSL_USE_BUNDLES` | `false` | Set `true` when DSL effects load from bundled assets (Portable's CDN) |
 | `SHADE_BACKEND` | `webgl2` | Default rendering backend (`webgl2` or `webgpu`) |
 | `SHADE_MAX_BROWSERS` | `1` | Concurrent browser sessions |
@@ -204,9 +204,9 @@ Every tool result's text is JSON in one envelope, errors included.
   rejected argument, `error` is the SDK's message, for example
   `MCP error -32602: Input validation error: ...`.
 
-### Browser Tools (8)
+### Browser Tools (11)
 
-These tools require Playwright Chromium; all except `runDslProgram` require a viewer (see [Viewer](#viewer)).
+These tools require Playwright Chromium; all except `runDslProgram` and the seed tools require a viewer (see [Viewer](#viewer)).
 
 Each result of the six viewer verbs (`compileEffect`, `renderEffectFrame`,
 `benchmarkEffectFPS`, `testUniformResponsiveness`, `testNoPassthrough`,
@@ -226,6 +226,11 @@ effect or renders on another backend, the entry's `status` is `error`.
 | `testNoPassthrough` | Check that a filter effect modifies the input it consumes: compares output and input at two paused times by mean difference, changed grid pixels and strongly changed pixels; a filter that is the identity at its defaults is measured again with its controls moved. |
 | `testPixelParity` | Compare WebGL2 and WebGPU output pixel by pixel within the epsilon tolerance. |
 | `runDslProgram` | Render every written output surface at frames 1, 120, and 600 after warmup by default, at 960×540. Return one PNG contact sheet as MCP image content plus metrics for each surface and frame. |
+| `getProgramSeed` | Return a program's seed: the value of its `seed` directive, or `null` when it has none. |
+| `setProgramSeed` | Set a program's seed, 0 to 4294967295. Return the seed and the program with its `seed` directive written or replaced, as the engine writes it back. |
+| `reseedProgram` | As `setProgramSeed`, with a fresh random seed. |
+
+The seed tools use the engine's seed API (`CanvasRenderer.getSeed` and `setSeed`), which Noisemaker 2 has. Point `SHADE_DSL_RENDERER_MODULE` at a Noisemaker 2 renderer to use them. With a renderer that has no seed API, each returns an error that names the missing methods.
 
 ### Analysis Tools (4)
 

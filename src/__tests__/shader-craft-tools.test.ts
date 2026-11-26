@@ -36,7 +36,7 @@ const call = async (name: string, args: Record<string, unknown>) => {
 describe('shader-craft MCP tools', () => {
   it('registers all three schemas', async () => {
     const { tools } = await client.listTools()
-    expect(tools).toHaveLength(21)
+    expect(tools).toHaveLength(24)
     for (const name of ['searchShaderLibrary', 'checkShader', 'bundleShader']) expect(tools.find(t => t.name === name)).toBeDefined()
     const bundle = tools.find(t => t.name === 'bundleShader')!
     expect(bundle.inputSchema.properties).toHaveProperty('write')
