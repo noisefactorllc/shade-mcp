@@ -71,6 +71,33 @@ describe('parseDefinitionJson', () => {
 })
 
 describe('loadEffectDefinition on a version 2 package', () => {
+  it('reads a fixture that declares every field of the package schema', () => {
+    const raw = portableV2()
+    const fieldsOf = (records: unknown[]) => [...new Set(records.flatMap(record => Object.keys(record as object)))].sort()
+    expect(Object.keys(raw).sort()).toEqual([
+      'builtinMeshes', 'defaultProgram', 'deprecatedBy', 'description', 'externalMesh', 'externalTexture',
+      'feature', 'format', 'func', 'globals', 'hidden', 'name', 'namespace', 'openCategories', 'outputGeo',
+      'outputTex3d', 'passes', 'starter', 'tags', 'textures', 'textures3d', 'uniformLayout', 'uniformLayouts',
+      'version',
+    ])
+    // storageBuffers is left out: a version 2 package refuses it, because it has no effect.
+    expect(fieldsOf(Object.values(raw.passes))).toEqual([
+      'blend', 'clear', 'conditions', 'count', 'countUniform', 'defines', 'drawBuffers', 'drawMode',
+      'entryPoint', 'inputs', 'name', 'outputs', 'program', 'repeat', 'samplerTypes', 'storageTextures',
+      'type', 'uniforms', 'viewport', 'workgroups',
+    ])
+    expect(fieldsOf(Object.values(raw.globals))).toEqual([
+      'choices', 'colorModeUniform', 'default', 'define', 'enum', 'inheritsSeed', 'max', 'min', 'randChance',
+      'randChoices', 'randMax', 'randMin', 'step', 'type', 'ui', 'uniform', 'zero',
+    ])
+    expect(fieldsOf(Object.values(raw.globals).map((spec: any) => spec.ui ?? {}))).toEqual([
+      'buttonLabel', 'category', 'control', 'enabledBy', 'format', 'hidden', 'hint', 'label', 'multiline', 'resetOnChange',
+    ])
+    expect(fieldsOf([...Object.values(raw.textures), ...Object.values(raw.textures3d)])).toEqual([
+      'depth', 'filter', 'format', 'height', 'is3D', 'mipmaps', 'persistent', 'width',
+    ])
+  })
+
   it('keeps every top-level field the package declares', () => {
     const raw = portableV2()
     const def = loadEffectDefinition(PORTABLE_V2_DIR) as unknown as Record<string, unknown>
@@ -119,7 +146,8 @@ describe('loadEffectDefinition on a version 2 package', () => {
 
   it('takes func from name when the package leaves func out', () => {
     const { func, ...raw } = portableV2()
-    expect(parseDefinitionJson(raw, '/test').func).toBe(raw.name)
+    raw.name = 'volumeTrailsByName'
+    expect(parseDefinitionJson(raw, '/test').func).toBe('volumeTrailsByName')
   })
 
   it('leaves the parsed package unchanged', () => {
