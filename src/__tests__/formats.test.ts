@@ -122,16 +122,35 @@ describe('loadEffectDefinition on a version 2 package', () => {
     expect(def.partial).toBeUndefined()
   })
 
-  it('types a uniform layout in the list form as well as the map form', () => {
+  it('types a uniform layout in each form the fixture uses: a map, a list and a byte layout', () => {
+    type ProgramLayout = NonNullable<EffectDefinition['uniformLayouts']>[string]
     const def = loadEffectDefinition(PORTABLE_V2_DIR)
-    const listForm: EffectDefinition['uniformLayout'] = [
+    const mapForm = {
+      resolution: { slot: 0, components: 'xy' },
+      time: { slot: 0, components: 'z' },
+      density: { slot: 0, components: 'w' },
+    }
+    const listForm = [
       { name: 'curl', slot: 0, components: 'x' },
       { name: 'steps', slot: 0, components: 'y' },
     ]
+    const byteForm = {
+      type: 'byte',
+      layout: [
+        { name: 'trailCount', offset: 0, size: 4, type: 'int' },
+        { name: 'density', offset: 4, size: 4, type: 'float' },
+      ],
+    }
+    // Each assignment fails the type check if the type does not hold that form.
+    const layouts: Array<EffectDefinition['uniformLayout']> = [mapForm, listForm, byteForm]
+    const programLayouts: ProgramLayout[] = [mapForm, listForm, byteForm]
+    expect(layouts).toStrictEqual(programLayouts)
+    expect(def.uniformLayout).toStrictEqual(mapForm)
     expect(def.uniformLayouts?.advect).toStrictEqual(listForm)
+    expect(def.uniformLayouts?.draw).toStrictEqual(byteForm)
   })
 
-  it('reads passes keyed by name as a list in declaration order, with every pass control and no field the pass leaves out', () => {
+  it('reads passes keyed by name as a list in declaration order, each with every pass control, its name, and no other field that the pass leaves out', () => {
     const raw = portableV2()
     const def = loadEffectDefinition(PORTABLE_V2_DIR)
     expect(def.passes.map(pass => pass.name)).toEqual(Object.keys(raw.passes))
@@ -140,7 +159,7 @@ describe('loadEffectDefinition on a version 2 package', () => {
     }
   })
 
-  it('keeps every field of each parameter, and adds none that it leaves out', () => {
+  it('keeps every field of each parameter, and adds only its name, and its uniform where the parameter leaves that out', () => {
     const raw = portableV2()
     const def = loadEffectDefinition(PORTABLE_V2_DIR)
     expect(Object.keys(def.globals)).toEqual(Object.keys(raw.globals))
