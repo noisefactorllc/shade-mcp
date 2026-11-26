@@ -45,6 +45,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
+// Names that reach an object's prototype. The engine refuses a package that
+// uses one as a key, and a parameter so named would replace the prototype of
+// the parameters object here.
+const RESERVED_NAMES = [...Object.getOwnPropertyNames(Object.prototype), 'prototype']
+
 // A version 2 package keeps every field it declares. Its passes are an object
 // keyed by pass name, in declaration order, and are read as a list in that
 // order, each with its name. Each parameter and each pass keeps all of its
@@ -64,12 +69,14 @@ function parsePortablePackage(json: Record<string, unknown>, effectDir: string):
   const rawGlobals = json.globals === undefined ? {} : json.globals
   if (!isRecord(rawGlobals)) throw new Error('definition.json: globals must be an object of parameters')
   for (const [key, spec] of Object.entries(rawGlobals)) {
+    if (RESERVED_NAMES.includes(key)) throw new Error(`definition.json: globals.${key}: a parameter name may not be a reserved name`)
     if (!isRecord(spec)) throw new Error(`definition.json: globals.${key} must be a parameter object`)
     globals[key] = { ...spec, ...normalizeGlobal(key, spec) }
   }
 
   const passes: EffectDefinition['passes'] = []
   for (const [name, pass] of Object.entries(json.passes)) {
+    if (RESERVED_NAMES.includes(name)) throw new Error(`definition.json: passes.${name}: a pass name may not be a reserved name`)
     if (!isRecord(pass)) throw new Error(`definition.json: passes.${name} must be a pass object`)
     passes.push({ ...pass, ...normalizePass({ ...pass, name }) })
   }

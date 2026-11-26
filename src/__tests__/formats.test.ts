@@ -125,6 +125,16 @@ describe('loadEffectDefinition on a version 2 package', () => {
     expect(() => loadEffectDefinition(writeJsonDef(unversioned))).toThrow(/version undefined is not supported/)
     expect(() => loadEffectDefinition(writeJsonDef({ ...raw, passes: [{ name: 'main', program: 'main' }] }))).toThrow(/passes must be an object keyed by pass name/)
   })
+
+  it('refuses a parameter or a pass named with a key of the object prototype, as the engine does', () => {
+    const raw = portableV2()
+    for (const name of ['__proto__', 'constructor', 'prototype']) {
+      const globals = JSON.parse(`{${JSON.stringify(name)}: {"type": "float", "default": 0}}`)
+      const passes = JSON.parse(`{${JSON.stringify(name)}: {"program": "main"}}`)
+      expect(() => parseDefinitionJson({ ...raw, globals }, '/test'), name).toThrow(`globals.${name}: a parameter name may not be a reserved name`)
+      expect(() => parseDefinitionJson({ ...raw, passes }, '/test'), name).toThrow(`passes.${name}: a pass name may not be a reserved name`)
+    }
+  })
 })
 
 describe('loadEffectDefinition on a 1.x definition.json', () => {
