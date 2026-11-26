@@ -10,8 +10,8 @@ import { getConfig } from '../../config.js'
 // engine's own seed API (CanvasRenderer.getSeed and setSeed). Like
 // runDslProgram, each call takes a program's DSL and runs it in a private
 // browser: no program stays open between calls. Setting the seed returns the
-// whole program as the engine's unparser writes it back. The seed tools take
-// built-in effects only.
+// whole program as the engine's unparser writes it back. Setting the seed
+// compiles the program, with built-in effects only; reading it does not.
 
 const MAX_SEED = 4294967295
 const dsl = z.string().min(1).max(100_000).describe('Noisemaker DSL program')
@@ -69,11 +69,19 @@ export async function runSeedOperation(session: BrowserSession, program: string,
             await renderer.setSeed(seed)
             return { status: 'ok' as const, seed: renderer.getSeed(), dsl: renderer.currentDsl }
           } catch (error: any) {
-            // A compile rejection carries diagnostics, not a message.
+            // A compile rejection carries diagnostics or errors, not a
+            // message. Its errors are written as the engine writes them, with
+            // their place, and warnings are left out.
             const diagnostics = Array.isArray(error?.diagnostics)
-              ? error.diagnostics.map((d: any) => [d.code, d.message].filter(Boolean).join(': ')).join('; ')
+              ? error.diagnostics.filter((d: any) => !d?.severity || d.severity === 'error').map((d: any) => {
+                const text = [d?.code, d?.message].filter(Boolean).join(': ')
+                return text && d?.location ? `${text} (line ${d.location.line}, col ${d.location.column})` : text
+              }).filter(Boolean).join('; ')
               : ''
-            return { status: 'error' as const, error: error?.message || diagnostics || error?.detail || JSON.stringify(error) || String(error) }
+            const errors = Array.isArray(error?.errors)
+              ? error.errors.map((e: any) => e?.message || String(e)).filter(Boolean).join('; ')
+              : ''
+            return { status: 'error' as const, error: error?.message || diagnostics || errors || error?.detail || JSON.stringify(error) || String(error) }
           } finally {
             await renderer?.dispose?.().catch(() => {})
             canvas.remove()
@@ -107,13 +115,13 @@ async function withSession<T>(fn: (session: BrowserSession) => Promise<T>): Prom
 export function registerSeedTools(server: McpServer): void {
   server.tool(
     'getProgramSeed',
-    'Read a Noisemaker DSL program\'s seed: the value of its seed directive, or null when it has none (it then draws from 0). Built-in effects only. Needs a Noisemaker 2 renderer.',
+    'Read a Noisemaker DSL program\'s seed: the value of its seed directive, or null when it has none (it then draws from 0). It reads the directive without compiling or checking the program. Needs a Noisemaker 2 renderer.',
     getProgramSeedSchema,
     async (args: any) => toolResult(await withSession(session => runSeedOperation(session, args.dsl))),
   )
   server.tool(
     'setProgramSeed',
-    'Set a Noisemaker DSL program\'s seed and return the seed and the program with its seed directive written or replaced. The whole program comes back as the engine\'s unparser writes it: comments before the search directive are dropped and values are written as compiled. Built-in effects only. Needs a Noisemaker 2 renderer.',
+    'Set a Noisemaker DSL program\'s seed and return the seed and the program with its seed directive written or replaced. The whole program comes back as the engine\'s unparser writes it: comments before the search directive are dropped, and literal values are written as compiled, while random calls stay as written. Built-in effects only. Needs a Noisemaker 2 renderer.',
     setProgramSeedSchema,
     async (args: any) => toolResult(await withSession(session => runSeedOperation(session, args.dsl, args.seed))),
   )

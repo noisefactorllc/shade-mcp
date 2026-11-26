@@ -96,6 +96,38 @@ export class CanvasRenderer {
       .toEqual({ status: 'error', error: "S001: Unknown effect: 'notAnEffect'" })
   })
 
+  it('reads the seed without compiling the program', async () => {
+    const noCompile = moduleUrl(`
+export class CanvasRenderer {
+  constructor() { this.currentDsl = '' }
+  async loadManifest() { return {} }
+  async loadEffects() {}
+  async compile() { throw new Error('compiled') }
+  getSeed() { return /^seed (\\d+)$/m.test(this.currentDsl) ? Number(/^seed (\\d+)$/m.exec(this.currentDsl)[1]) : null }
+  async setSeed() {}
+  async dispose() {}
+}`)
+    expect(await runSeedOperation(sessionWith(noCompile), 'search synth\nseed 5\nnotAnEffect().write(o0)'))
+      .toEqual({ status: 'ok', seed: 5 })
+  })
+
+  it('reports only errors, with their place, and expansion errors as text', async () => {
+    const throwing = (value: string) => moduleUrl(`
+export class CanvasRenderer {
+  async loadManifest() { return {} }
+  async loadEffects() {}
+  async compile() { throw ${value} }
+  getSeed() { return null }
+  async setSeed() {}
+  async dispose() {}
+}`)
+    const diagnostics = "{ diagnostics: [{ code: 'S002', severity: 'warning', message: 'Argument out of range' }, { code: 'S001', severity: 'error', message: 'Unknown effect', location: { line: 2, column: 1 } }, { severity: 'error' }] }"
+    expect(await runSeedOperation(sessionWith(throwing(diagnostics)), 'search synth\nx().write(o0)', 7))
+      .toEqual({ status: 'error', error: 'S001: Unknown effect (line 2, col 1)' })
+    expect(await runSeedOperation(sessionWith(throwing("{ code: 'ERR_EXPANSION_FAILED', errors: [{ message: 'no output' }] }")), 'search synth\nx().write(o0)', 7))
+      .toEqual({ status: 'error', error: 'no output' })
+  })
+
   it('draws a fresh seed over the whole range', () => {
     const seeds = Array.from({ length: 64 }, freshSeed)
     for (const seed of seeds) expect(Number.isInteger(seed) && seed >= 0 && seed <= 4294967295).toBe(true)
