@@ -11,6 +11,17 @@ export interface EffectUniform {
   /** Compile-time define name for a global that is not a runtime uniform. */
   define?: string
   ui?: Record<string, unknown>
+  // The fields below are read from a version 2 definition.json only. The 1.x
+  // readers leave them out.
+  /** A std enum table that supplies the choices. */
+  enum?: string
+  zero?: unknown
+  randMin?: unknown
+  randMax?: unknown
+  randChance?: unknown
+  randChoices?: number[]
+  colorModeUniform?: string
+  inheritsSeed?: boolean
 }
 
 export interface EffectPass {
@@ -19,6 +30,26 @@ export interface EffectPass {
   type?: 'render' | 'compute' | 'gpgpu'
   inputs?: Record<string, string>
   outputs?: Record<string, string>
+  // The pass controls below are read from a version 2 definition.json only.
+  // The 1.x readers leave them out.
+  entryPoint?: string
+  drawMode?: 'points' | 'triangles' | 'billboards' | (string & {})
+  drawBuffers?: number
+  count?: number | string
+  countUniform?: string
+  repeat?: number | string
+  blend?: boolean | string[]
+  workgroups?: Array<number | string>
+  storageTextures?: Record<string, string>
+  viewport?: Record<string, unknown>
+  conditions?: {
+    runIf?: Array<{ uniform: string; equals: unknown }>
+    skipIf?: Array<{ uniform: string; equals: unknown }>
+  }
+  defines?: Record<string, string | number>
+  uniforms?: Record<string, number | string>
+  clear?: boolean
+  samplerTypes?: Record<string, string>
 }
 
 export interface EffectDefinition {
@@ -30,6 +61,22 @@ export interface EffectDefinition {
   tags?: string[]
   globals: Record<string, EffectUniform>
   passes: EffectPass[]
+  // The fields below are read from a version 2 definition.json only. The 1.x
+  // readers leave them out.
+  feature?: string
+  hidden?: boolean
+  deprecatedBy?: string
+  openCategories?: string[]
+  textures?: Record<string, Record<string, unknown>>
+  textures3d?: Record<string, Record<string, unknown>>
+  uniformLayout?: Record<string, unknown>
+  uniformLayouts?: Record<string, Record<string, unknown>>
+  defaultProgram?: string
+  externalTexture?: string
+  externalMesh?: string
+  builtinMeshes?: Record<string, string>
+  outputTex3d?: string
+  outputGeo?: string
   format: 'json' | 'js'
   effectDir: string
   /**

@@ -1,0 +1,199 @@
+{
+  "format": "noisemaker-portable-effect",
+  "version": 2,
+  "name": "Volume Trails",
+  "namespace": "user",
+  "func": "volumeTrails",
+  "description": "Fills a volume and its geometry, then advects particle trails through it",
+  "tags": ["noise", "geometric"],
+  "feature": "scene.volume",
+  "starter": true,
+  "hidden": false,
+  "deprecatedBy": "user/volumeTrailsNext",
+  "openCategories": ["general", "trails"],
+  "externalTexture": "imageTex",
+  "externalMesh": "mesh0",
+  "builtinMeshes": { "sphere": "share/meshes/sphere.obj", "cube": "share/meshes/cube.obj" },
+  "globals": {
+    "volumeSize": {
+      "type": "int",
+      "default": 32,
+      "uniform": "volumeSize",
+      "min": 8,
+      "max": 64,
+      "step": 8,
+      "ui": { "label": "volume size", "control": "slider", "category": "general" }
+    },
+    "density": {
+      "type": "float",
+      "default": 0.5,
+      "uniform": "density",
+      "min": 0,
+      "max": 1,
+      "step": 0.01,
+      "zero": 0,
+      "randMin": 0.2,
+      "randMax": 0.8,
+      "randChance": 0.5,
+      "ui": { "label": "density", "control": "slider", "category": "trails", "hint": "how many trails start each frame" }
+    },
+    "mode": {
+      "type": "int",
+      "default": 1,
+      "uniform": "mode",
+      "define": "TRAIL_MODE",
+      "choices": { "straight": 0, "curl": 1 },
+      "randChoices": [0, 1],
+      "ui": { "label": "mode", "control": "dropdown", "category": "trails" }
+    },
+    "curl": {
+      "type": "float",
+      "default": 0.25,
+      "uniform": "curl",
+      "min": 0,
+      "max": 1,
+      "ui": { "label": "curl", "control": "slider", "category": "trails", "enabledBy": { "param": "mode", "eq": 1 } }
+    },
+    "trailCount": {
+      "type": "int",
+      "default": 256,
+      "uniform": "trailCount",
+      "min": 1,
+      "max": 4096,
+      "ui": { "label": "trails", "control": "slider", "category": "trails" }
+    },
+    "steps": {
+      "type": "int",
+      "default": 2,
+      "uniform": "steps",
+      "min": 1,
+      "max": 8,
+      "ui": { "label": "steps", "control": "slider", "category": "trails" }
+    },
+    "colorMode": {
+      "type": "int",
+      "default": 0,
+      "uniform": "colorMode",
+      "choices": { "mono": 0, "palette": 1 },
+      "ui": { "label": "color mode", "control": "dropdown", "category": "general" }
+    },
+    "palette": {
+      "type": "palette",
+      "default": 0,
+      "uniform": "palette",
+      "colorModeUniform": "colorMode",
+      "inheritsSeed": true,
+      "ui": { "label": "palette", "control": "dropdown", "category": "general" }
+    },
+    "colorSpace": {
+      "type": "int",
+      "default": 0,
+      "uniform": "colorSpace",
+      "enum": "color",
+      "ui": { "label": "color space", "control": "dropdown", "category": "general" }
+    },
+    "bounds": {
+      "type": "vec4",
+      "default": [0, 0, 1, 1],
+      "uniform": "bounds",
+      "ui": { "label": "bounds", "control": "slider", "hidden": true, "format": "vector", "category": "general" }
+    },
+    "caption": {
+      "type": "string",
+      "default": "trails",
+      "ui": { "label": "caption", "multiline": true }
+    },
+    "resetState": {
+      "type": "boolean",
+      "default": false,
+      "uniform": "resetState",
+      "ui": { "label": "state", "control": "button", "buttonLabel": "reset", "resetOnChange": true }
+    }
+  },
+  "textures": {
+    "volume": {
+      "width": { "param": "volumeSize", "default": 32 },
+      "height": { "param": "volumeSize", "power": 2, "default": 1024 },
+      "format": "rgba16f"
+    },
+    "geometry": {
+      "width": { "param": "volumeSize", "default": 32 },
+      "height": { "param": "volumeSize", "power": 2, "default": 1024 },
+      "format": "rgba16f"
+    },
+    "trailState": {
+      "width": 64,
+      "height": 64,
+      "format": "rgba32f",
+      "persistent": true
+    },
+    "blurred": {
+      "width": "50%",
+      "height": "50%",
+      "format": "rgba8",
+      "mipmaps": true
+    }
+  },
+  "textures3d": {
+    "field": {
+      "width": 16,
+      "height": 16,
+      "depth": 16,
+      "format": "rgba16f",
+      "is3D": true,
+      "filter": "linear"
+    }
+  },
+  "uniformLayout": {
+    "resolution": { "slot": 0, "components": "xy" },
+    "time": { "slot": 0, "components": "z" },
+    "density": { "slot": 0, "components": "w" }
+  },
+  "uniformLayouts": {
+    "advect": {
+      "curl": { "slot": 0, "components": "x" },
+      "steps": { "slot": 0, "components": "y" }
+    }
+  },
+  "passes": {
+    "fill": {
+      "program": "fill",
+      "drawBuffers": 2,
+      "viewport": {
+        "width": { "param": "volumeSize", "default": 32 },
+        "height": { "param": "volumeSize", "power": 2, "default": 1024 }
+      },
+      "defines": { "FILL_OCTAVES": 3 },
+      "uniforms": { "fillScale": 2 },
+      "inputs": {},
+      "outputs": { "color": "volume", "geoOut": "geometry" }
+    },
+    "advect": {
+      "program": "advect",
+      "type": "compute",
+      "entryPoint": "advectMain",
+      "workgroups": [8, 8, 1],
+      "repeat": "steps",
+      "storageTextures": { "stateOut": "trailState" },
+      "conditions": { "runIf": [{ "uniform": "mode", "equals": 1 }] },
+      "inputs": { "volumeTex": "volume", "fieldTex": "field" },
+      "outputs": {}
+    },
+    "draw": {
+      "name": "draw",
+      "program": "draw",
+      "drawMode": "points",
+      "count": 256,
+      "countUniform": "trailCount",
+      "blend": ["one", "one"],
+      "clear": true,
+      "conditions": { "skipIf": [{ "uniform": "density", "equals": 0 }] },
+      "samplerTypes": { "stateTex": "nearest" },
+      "inputs": { "stateTex": "trailState" },
+      "outputs": { "fragColor": "blurred" }
+    }
+  },
+  "outputTex3d": "volume",
+  "outputGeo": "geometry",
+  "defaultProgram": "search user, render\nvolumeTrails().render3d().write(o0)\nrender(o0)"
+}
