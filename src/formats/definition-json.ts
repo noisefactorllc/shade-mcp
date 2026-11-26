@@ -2,12 +2,13 @@ import type { EffectDefinition } from './types.js'
 import { normalizeGlobal, normalizePass } from './normalize.js'
 
 // The marker of a version 2 Portable package. A definition.json with no
-// `format` field is a 1.x definition, and its reading is unchanged.
+// `format` field is read as a 1.x definition, by the reduced projection in
+// parseDefinitionJson.
 export const PORTABLE_FORMAT = 'noisemaker-portable-effect'
 export const PORTABLE_VERSION = 2
 
-// The top-level fields of a version 2 package that the reader keeps as the
-// package states them, in addition to the fields every definition has.
+// The top-level fields that the version 2 reader keeps, beside func, name,
+// namespace, description, starter and tags, which the 1.x projection reads too.
 const PACKAGE_FIELDS = [
   'feature', 'hidden', 'deprecatedBy', 'openCategories',
   'textures', 'textures3d', 'uniformLayout', 'uniformLayouts', 'defaultProgram',
@@ -45,25 +46,47 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-// Names that reach an object's prototype. The engine refuses a package that
-// uses one as a key, and a parameter so named would replace the prototype of
-// the parameters object here.
+// The keys of Object.prototype, and "prototype". A parameter named __proto__
+// would replace the prototype of the parameters object.
 const RESERVED_NAMES = [...Object.getOwnPropertyNames(Object.prototype), 'prototype']
 
-// The shared projection sets every field it knows, and a field that it has
-// no value or default for is set to undefined. Those fields are dropped, so a
-// version 2 definition, its parameters and its passes carry no field that is
-// set to undefined.
+// A copy of the object without its fields whose value is undefined.
 function declaredFields<T extends object>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter(([, field]) => field !== undefined)) as T
 }
 
-// A version 2 package keeps every field it declares. Its passes are an object
-// keyed by pass name, in declaration order, and are read as a list in that
-// order, each with its name. Each parameter and each pass keeps all of its
-// fields, with the shared projection's values on top: a parameter's name,
-// its uniform and its type, and a pass's name and its program. The
-// projection adds no other field that the package leaves out.
+// Reads a version 2 package: a definition.json whose `format` field is set.
+//
+// It throws when:
+// - format is not PORTABLE_FORMAT;
+// - version is left out, or is not PORTABLE_VERSION;
+// - passes is not an object, or is an array;
+// - globals is set and is not an object, or is an array;
+// - a parameter or a pass is not an object, or is an array;
+// - a parameter or a pass is named with a RESERVED_NAMES entry.
+//
+// The definition it returns:
+// - Keeps, as the package's own values: name, namespace, description,
+//   starter, tags, the PACKAGE_FIELDS, and func unless func is null.
+// - Drops version, and every top-level field that no item of this list names.
+// - Sets format to 'json' and effectDir to the effect directory.
+// - Sets func to the value of name when func is null or left out.
+// - Sets globals to {} when the package leaves globals out.
+// - Gives each parameter every field it declares, with three set on top by
+//   normalizeGlobal: name, set to the parameter's key; uniform, set to the key
+//   when uniform is falsy; and type, set to 'float' when type is falsy.
+// - Reads passes as a list, in the order of Object.entries: names that are
+//   array indices first, in numeric order, then the other names in
+//   declaration order.
+// - Gives each pass every field it declares, with two set on top by
+//   normalizePass: name, set to the pass's key; and program, set to 'main'
+//   when program is falsy.
+// - Carries no field whose value is undefined, at the top level, in a
+//   parameter or in a pass. Such fields come from the projection and the
+//   object literal below, for what the package leaves out. JSON holds no
+//   undefined value, so a package parsed from JSON loses no field this way.
+// Nested values, such as a parameter's ui or a texture, are the package's own
+// objects. The package itself is not changed.
 function parsePortablePackage(json: Record<string, unknown>, effectDir: string): EffectDefinition {
   if (json.format !== PORTABLE_FORMAT) {
     throw new Error(`definition.json: format ${JSON.stringify(json.format)} is not supported; a version ${PORTABLE_VERSION} package states "format": "${PORTABLE_FORMAT}"`)
@@ -100,7 +123,6 @@ function parsePortablePackage(json: Record<string, unknown>, effectDir: string):
   }
 
   return declaredFields({
-    // A version 2 package may leave func out; its name is then the func.
     func: (json.func ?? json.name) as string,
     name: json.name as string | undefined,
     namespace: json.namespace as string | undefined,

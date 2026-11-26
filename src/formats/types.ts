@@ -13,7 +13,7 @@ export interface EffectUniform {
   ui?: Record<string, unknown>
   // The fields below are read from a version 2 definition.json only. The 1.x
   // readers leave them out.
-  /** A std enum table that supplies the choices. */
+  /** The name of a std enum table. */
   enum?: string
   zero?: unknown
   randMin?: unknown

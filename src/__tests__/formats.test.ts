@@ -6,10 +6,8 @@ import { fileURLToPath } from 'node:url'
 import { loadEffectDefinition, parseDefinitionJson } from '../formats/index.js'
 import type { EffectDefinition } from '../formats/index.js'
 
-// A version 2 package written from the Portable package schema, valid under
-// the engine's own version 2 normalizer. It declares every top-level, pass,
-// parameter, control and texture field of the schema, and a uniform layout in
-// each form the engine reads, so each can be followed through the reader.
+// A version 2 package written from the Portable package schema. The first
+// test below lists the fields it declares.
 const PORTABLE_V2_DIR = fileURLToPath(new URL('./fixtures/portable-v2', import.meta.url))
 const portableV2 = (): Record<string, any> => JSON.parse(readFileSync(join(PORTABLE_V2_DIR, 'definition.json'), 'utf-8'))
 
@@ -72,8 +70,8 @@ describe('parseDefinitionJson', () => {
   })
 })
 
-describe('loadEffectDefinition on a version 2 package', () => {
-  it('reads a fixture that declares every top-level, pass, parameter, control and texture field of the package schema', () => {
+describe('reading a version 2 definition.json', () => {
+  it('uses a fixture that declares the listed top-level, pass, parameter, ui and texture fields, and uniform layouts in map, list and byte form', () => {
     const raw = portableV2()
     const fieldsOf = (records: unknown[]) => [...new Set(records.flatMap(record => Object.keys(record as object)))].sort()
     expect(Object.keys(raw).sort()).toEqual([
@@ -82,7 +80,7 @@ describe('loadEffectDefinition on a version 2 package', () => {
       'outputTex3d', 'passes', 'starter', 'tags', 'textures', 'textures3d', 'uniformLayout', 'uniformLayouts',
       'version',
     ])
-    // storageBuffers is left out: a version 2 package refuses it, because it has no effect.
+    // The list has no storageBuffers, which the engine refuses in a version 2 package.
     expect(fieldsOf(Object.values(raw.passes))).toEqual([
       'blend', 'clear', 'conditions', 'count', 'countUniform', 'defines', 'drawBuffers', 'drawMode',
       'entryPoint', 'inputs', 'name', 'outputs', 'program', 'repeat', 'samplerTypes', 'storageTextures',
@@ -98,17 +96,17 @@ describe('loadEffectDefinition on a version 2 package', () => {
     expect(fieldsOf([...Object.values(raw.textures), ...Object.values(raw.textures3d)])).toEqual([
       'depth', 'filter', 'format', 'height', 'is3D', 'mipmaps', 'persistent', 'width',
     ])
-    // A uniform layout is a map of uniform names to slots, a list of entries or a byte layout.
+    // uniformLayout is in map form. uniformLayouts holds a list form and a byte form.
     expect(Array.isArray(raw.uniformLayout)).toBe(false)
     expect(raw.uniformLayout.time).toHaveProperty('slot')
     expect(Array.isArray(raw.uniformLayouts.advect)).toBe(true)
     expect(raw.uniformLayouts.draw.type).toBe('byte')
   })
 
-  it('keeps every top-level field the package declares', () => {
+  it('keeps each top-level field of the fixture other than format, version, globals and passes, drops version, and sets format and effectDir', () => {
     const raw = portableV2()
     const def = loadEffectDefinition(PORTABLE_V2_DIR) as unknown as Record<string, unknown>
-    // The fields the 1.x projection drops, named so the fixture cannot lose one.
+    // Some of the fields that the 1.x projection drops, named so that the fixture keeps them.
     for (const field of ['textures', 'outputTex3d', 'outputGeo', 'uniformLayout', 'uniformLayouts', 'defaultProgram']) {
       expect(raw, field).toHaveProperty([field])
       expect(def[field], field).toEqual(raw[field])
@@ -117,12 +115,13 @@ describe('loadEffectDefinition on a version 2 package', () => {
       if (['format', 'version', 'globals', 'passes'].includes(field)) continue
       expect(def[field], field).toEqual(raw[field])
     }
+    expect(def).not.toHaveProperty('version')
     expect(def.format).toBe('json')
     expect(def.effectDir).toBe(PORTABLE_V2_DIR)
     expect(def.partial).toBeUndefined()
   })
 
-  it('types a uniform layout in each form the fixture uses: a map, a list and a byte layout', () => {
+  it('accepts a uniform layout in map, list and byte form under the uniformLayout and uniformLayouts types, and reads each form from the fixture', () => {
     type ProgramLayout = NonNullable<EffectDefinition['uniformLayouts']>[string]
     const def = loadEffectDefinition(PORTABLE_V2_DIR)
     const mapForm = {
@@ -150,7 +149,7 @@ describe('loadEffectDefinition on a version 2 package', () => {
     expect(def.uniformLayouts?.draw).toStrictEqual(byteForm)
   })
 
-  it('reads passes keyed by name as a list in declaration order, each with every pass control, its name, and no other field that the pass leaves out', () => {
+  it('reads the fixture\'s passes as a list in the order of their keys, each equal to its own fields with name set to its key', () => {
     const raw = portableV2()
     const def = loadEffectDefinition(PORTABLE_V2_DIR)
     expect(def.passes.map(pass => pass.name)).toEqual(Object.keys(raw.passes))
@@ -159,7 +158,7 @@ describe('loadEffectDefinition on a version 2 package', () => {
     }
   })
 
-  it('keeps every field of each parameter, and adds only its name, and its uniform where the parameter leaves that out', () => {
+  it('reads each of the fixture\'s parameters as its own fields with name set to its key, and uniform set to its key where the parameter has none', () => {
     const raw = portableV2()
     const def = loadEffectDefinition(PORTABLE_V2_DIR)
     expect(Object.keys(def.globals)).toEqual(Object.keys(raw.globals))
@@ -168,7 +167,7 @@ describe('loadEffectDefinition on a version 2 package', () => {
     }
   })
 
-  it('adds no top-level field that a package leaves out', () => {
+  it('reads a minimal package as its func and name, its pass with name set to its key, globals {}, format and effectDir, and no other field', () => {
     const minimal = { format: 'noisemaker-portable-effect', version: 2, name: 'minimal', func: 'minimal', passes: { main: { program: 'main' } } }
     expect(parseDefinitionJson(minimal, '/test')).toStrictEqual({
       func: 'minimal',
@@ -180,7 +179,7 @@ describe('loadEffectDefinition on a version 2 package', () => {
     })
   })
 
-  it('takes func from name when the package leaves func out', () => {
+  it('sets func to the name when the package leaves func out', () => {
     const { func, ...raw } = portableV2()
     raw.name = 'volumeTrailsByName'
     expect(parseDefinitionJson(raw, '/test').func).toBe('volumeTrailsByName')
@@ -192,7 +191,7 @@ describe('loadEffectDefinition on a version 2 package', () => {
     expect(raw).toEqual(portableV2())
   })
 
-  it('refuses a format marker or a version it does not read, and passes that are not keyed by name', () => {
+  it('throws for another format, for version 3, for a missing version and for passes given as an array', () => {
     const raw = portableV2()
     expect(() => loadEffectDefinition(writeJsonDef({ ...raw, format: 'other-format' }))).toThrow(/format "other-format" is not supported/)
     expect(() => loadEffectDefinition(writeJsonDef({ ...raw, version: 3 }))).toThrow(/version 3 is not supported/)
@@ -201,7 +200,7 @@ describe('loadEffectDefinition on a version 2 package', () => {
     expect(() => loadEffectDefinition(writeJsonDef({ ...raw, passes: [{ name: 'main', program: 'main' }] }))).toThrow(/passes must be an object keyed by pass name/)
   })
 
-  it('refuses a parameter or a pass named with a key of the object prototype, as the engine does', () => {
+  it('throws for a parameter or a pass named __proto__, constructor or prototype', () => {
     const raw = portableV2()
     for (const name of ['__proto__', 'constructor', 'prototype']) {
       const globals = JSON.parse(`{${JSON.stringify(name)}: {"type": "float", "default": 0}}`)
@@ -212,8 +211,8 @@ describe('loadEffectDefinition on a version 2 package', () => {
   })
 })
 
-describe('loadEffectDefinition on a 1.x definition.json', () => {
-  it('reads the same projection as before: the fields a version 2 package adds stay out', () => {
+describe('reading a 1.x definition.json', () => {
+  it('reads a definition.json with no format field as the reduced projection, with only the listed fields of the definition, its parameters and its passes', () => {
     const raw = portableV2()
     const { format, version, ...legacy } = raw
     legacy.version = '1.0.0'
