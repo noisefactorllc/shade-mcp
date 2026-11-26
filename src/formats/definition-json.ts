@@ -72,13 +72,13 @@ function declaredFields<T extends object>(value: T): T {
 // - Sets format to 'json' and effectDir to the effect directory.
 // - Sets func to the value of name when func is null or left out.
 // - Sets globals to {} when the package leaves globals out.
-// - Gives each parameter every field it declares, with three set on top by
+// - Gives each parameter every field it declares, with these set on top by
 //   normalizeGlobal: name, set to the parameter's key; uniform, set to the key
 //   when uniform is falsy; and type, set to 'float' when type is falsy.
 // - Reads passes as a list, in the order of Object.entries: names that are
 //   array indices first, in numeric order, then the other names in
 //   declaration order.
-// - Gives each pass every field it declares, with two set on top by
+// - Gives each pass every field it declares, with these set on top by
 //   normalizePass: name, set to the pass's key; and program, set to 'main'
 //   when program is falsy.
 // - Carries no field whose value is undefined, at the top level, in a

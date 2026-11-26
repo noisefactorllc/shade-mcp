@@ -1,11 +1,5 @@
 import type { EffectPass, EffectUniform } from './types.js'
 
-// One projection of a raw global spec and a raw pass. The 1.x JSON reader and
-// the JS reader return it as it is, so a 1.x effect gets the same parameters
-// and passes from either file format, when its definition.js holds only
-// literal values. The version 2 reader sets it on top of the package's own
-// fields.
-
 export function normalizeGlobal(key: string, spec: Record<string, unknown>): EffectUniform {
   return {
     name: key,

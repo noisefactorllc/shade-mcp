@@ -6,8 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { loadEffectDefinition, parseDefinitionJson } from '../formats/index.js'
 import type { EffectDefinition } from '../formats/index.js'
 
-// A version 2 package written from the Portable package schema. The first
-// test below lists the fields it declares.
+// A version 2 package written from the Portable package schema.
 const PORTABLE_V2_DIR = fileURLToPath(new URL('./fixtures/portable-v2', import.meta.url))
 const portableV2 = (): Record<string, any> => JSON.parse(readFileSync(join(PORTABLE_V2_DIR, 'definition.json'), 'utf-8'))
 
@@ -188,7 +187,7 @@ describe('reading a version 2 definition.json', () => {
   it('leaves the parsed package unchanged', () => {
     const raw = portableV2()
     parseDefinitionJson(raw, '/test')
-    expect(raw).toEqual(portableV2())
+    expect(raw).toStrictEqual(portableV2())
   })
 
   it('throws for another format, for version 3, for a missing version and for passes given as an array', () => {

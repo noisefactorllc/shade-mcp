@@ -61,8 +61,6 @@ export interface EffectDefinition {
   tags?: string[]
   globals: Record<string, EffectUniform>
   passes: EffectPass[]
-  // The fields below are read from a version 2 definition.json only. The 1.x
-  // readers leave them out.
   feature?: string
   hidden?: boolean
   deprecatedBy?: string
