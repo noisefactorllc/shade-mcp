@@ -49,7 +49,7 @@ function checkCamelCase(name: string): boolean {
 }
 
 // The indexed form <camelCase><index>_<camelCase> of a global name, such as
-// zone0_tex or layer1_active.
+// zone0_tex or layer0_tex.
 function checkIndexedName(name: string): boolean {
   return /^[a-z][a-zA-Z0-9]*[0-9]_[a-z][a-zA-Z0-9]*$/.test(name)
 }

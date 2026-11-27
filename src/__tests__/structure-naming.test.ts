@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { checkEffectStructure } from '../tools/analysis/structure.js'
 
-// Noisemaker's parameter contract names some globals in the indexed form
+// Noisemaker effects name some globals in the indexed form
 // <camelCase><index>_<camelCase>: synth/remap has zone0_tex and zone0_count,
 // and mixer/mashup has layer0_tex. The definition.json reader reads each one.
 
