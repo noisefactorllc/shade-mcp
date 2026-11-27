@@ -49,14 +49,8 @@ export function registerAnalyzeEffect(server: McpServer): void {
 
       const output = {
         effectId: args.effect_id,
-        name: def.name,
-        description: def.description,
-        namespace: def.namespace,
+        ...def,
         tags: def.tags || [],
-        globals: def.globals,
-        passes: def.passes,
-        format: def.format,
-        ...(def.partial && { partial: true, partialReasons: def.partialReasons }),
         shaders,
       }
 
