@@ -48,6 +48,12 @@ function checkCamelCase(name: string): boolean {
   return /^[a-z][a-zA-Z0-9]*$/.test(name)
 }
 
+// The indexed form <camelCase><index>_<camelCase> of a global name, such as
+// zone0_tex or layer1_active.
+function checkIndexedName(name: string): boolean {
+  return /^[a-z][a-zA-Z0-9]*[0-9]_[a-z][a-zA-Z0-9]*$/.test(name)
+}
+
 export async function checkEffectStructure(effectId: string): Promise<any> {
   const config = getConfig()
   const effectDir = resolveEffectDir(effectId, config.effectsDir)
@@ -91,7 +97,7 @@ export async function checkEffectStructure(effectId: string): Promise<any> {
   // Check globals naming and leaked internals
   const INTERNAL = new Set(['channels', 'time', 'resolution', 'mouse'])
   for (const [name, spec] of Object.entries(def.globals || {}) as any[]) {
-    if (!checkCamelCase(name)) {
+    if (!checkCamelCase(name) && !checkIndexedName(name)) {
       issues.namingIssues.push({ type: 'global', name, reason: 'Must be camelCase' })
     }
     if (INTERNAL.has(spec.uniform || name)) {
