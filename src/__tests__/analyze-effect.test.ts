@@ -67,4 +67,39 @@ describe('analyzeEffect', () => {
     const definition = JSON.parse(JSON.stringify(loadEffectDefinition(dir)))
     expect(output).toEqual({ outcome: 'ok', effectId: 'synth/solid', ...definition, shaders: { 'glsl/solid.glsl': 'void main() {}\n' } })
   })
+
+  it('returns each field that loadEffectDefinition returns for a 1.x definition.json, with tags as an empty list when the definition has none', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'shade-analyze-'))
+    roots.push(root)
+    const dir = join(root, 'synth', 'solid')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'definition.json'), JSON.stringify({
+      func: 'solid', name: 'Solid', namespace: 'synth', description: 'd', starter: true,
+      globals: { color: { type: 'color', default: [1, 0, 0] } },
+      passes: [{ name: 'render', program: 'solid' }],
+    }))
+    vi.stubEnv('SHADE_EFFECTS_DIR', root)
+    const output = await analyzeEffect('synth/solid')
+    const definition = JSON.parse(JSON.stringify(loadEffectDefinition(dir)))
+    expect(definition.tags).toBeUndefined()
+    expect(output).toEqual({ outcome: 'ok', effectId: 'synth/solid', ...definition, tags: [], shaders: {} })
+  })
+
+  it('returns partial and partialReasons for a definition.js whose passes are computed at run time', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'shade-analyze-'))
+    roots.push(root)
+    const dir = join(root, 'render', 'points')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'definition.js'), `export default new Effect({
+      func: 'points', name: 'Points', description: 'd', tags: [],
+      globals: {},
+      passes: ['a', 'b'].flatMap(k => [{ name: k, program: k }])
+    })`)
+    vi.stubEnv('SHADE_EFFECTS_DIR', root)
+    const output = await analyzeEffect('render/points')
+    const definition = JSON.parse(JSON.stringify(loadEffectDefinition(dir)))
+    expect(definition.partial).toBe(true)
+    expect(output.partial).toBe(true)
+    expect(output.partialReasons).toEqual(definition.partialReasons)
+  })
 })
