@@ -4,6 +4,7 @@
 // Usage: NOISEMAKER=/path/to/noisemaker NOISEMAKER_2X=/path/to/noisemaker-2 node scripts/seed-smoke.mjs
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { BrowserSession, getServerUrl } from '../dist/harness/index.js'
 
 const { NOISEMAKER: noisemaker1, NOISEMAKER_2X: noisemaker2 } = process.env
 assert.ok(noisemaker1 && noisemaker2, 'Set NOISEMAKER and NOISEMAKER_2X to source checkouts')
@@ -65,8 +66,42 @@ async function meanOf(client, dsl) {
   return JSON.stringify(result.metrics)
 }
 
-const SEEDED = 'search synth\nseed 42\nnoise(scaleX: rand(1, 100), scaleY: rand(1, 100)).write(o0)\nrender(o0)'
-const UNSEEDED = 'search synth\nnoise(scaleX: rand(1, 100), scaleY: rand(1, 100)).write(o0)\nrender(o0)'
+// Inspect the browser compiler's values, independently of rendered pixels.
+async function compiledDraws(programs) {
+  const session = new BrowserSession({ backend: 'webgl2', blankPage: true, headless: true,
+    viewerRoot: noisemaker2, effectsDir: `${noisemaker2}/shaders/effects` })
+  try {
+    await session.setup()
+    const results = await session.page.evaluate(async ({ base, programs }) => {
+      const { CanvasRenderer, compile } = await import(`${base}/shaders/src/index.js`)
+      const renderer = new CanvasRenderer({ basePath: `${base}/shaders`, useBundles: false })
+      try {
+        await renderer.loadManifest()
+        await renderer.loadEffects(['synth/noise'])
+        return programs.map(dsl => {
+          const compiled = compile(dsl)
+          return {
+            errors: compiled.diagnostics.filter(d => d.severity === 'error'),
+            args: compiled.plans[0]?.chain.find(step => step.op === 'synth.noise')?.args,
+          }
+        })
+      } finally {
+        await renderer.dispose()
+      }
+    }, { base: getServerUrl(), programs })
+    return results.map(({ errors, args }) => {
+      assert.deepEqual(errors, [])
+      assert.equal(args?.seed, 1, 'the explicit noise seed stays fixed')
+      assert.ok(Number.isFinite(args.scaleX) && Number.isFinite(args.scaleY), 'rand compiles to numeric scales')
+      return [args.scaleX, args.scaleY]
+    })
+  } finally {
+    await session.teardown()
+  }
+}
+
+const SEEDED = 'search synth\nseed 42\nnoise(seed: 1, scaleX: rand(1, 100), scaleY: rand(1, 100)).write(o0)\nrender(o0)'
+const UNSEEDED = 'search synth\nnoise(seed: 1, scaleX: rand(1, 100), scaleY: rand(1, 100)).write(o0)\nrender(o0)'
 const seedLine = dsl => /^seed (\d+)$/m.exec(dsl)?.[1]
 
 let client
@@ -100,6 +135,13 @@ try {
   assert.equal(seedLine(reseeded.dsl), String(reseeded.seed), reseeded.dsl)
   assert.notEqual(await meanOf(client, reseeded.dsl), before, 'a fresh seed draws other values')
   console.log(`seed: PASS reseedProgram wrote seed ${reseeded.seed} and changed the draws`)
+
+  const [draws, repeatedDraws, setDraws, reseededDraws] = await compiledDraws([SEEDED, SEEDED, set.dsl, reseeded.dsl])
+  assert.deepEqual(draws, [65.58765476942062, 77.99026489257812], 'seed 42 compiles to the expected rand values')
+  assert.deepEqual(repeatedDraws, draws, 'the same seed compiles to the same rand values')
+  assert.deepEqual(setDraws, [52.575698256492615, 97.08937138319016], 'setProgramSeed compiles to the seed 7 rand values')
+  assert.notDeepEqual(reseededDraws, draws, 'reseedProgram changes the compiled rand values')
+  console.log('seed: PASS compiled rand values match fixed seeds and change after reseeding, with noise seed held fixed')
 
   // Out-of-range input is refused by the schema.
   const refused = await client.rpc('tools/call', { name: 'setProgramSeed', arguments: { dsl: SEEDED, seed: 4294967296 } })
